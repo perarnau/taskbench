@@ -1,33 +1,29 @@
 #!/usr/bin/env python
-import yaml
 import argparse
 import hashlib
 import sys
 import struct
 import binascii
+import logging
+
+class Arg:
+    def __init__(self,uid,t):
+        self.uid = uid
+        self.access = t
 
 class Data:
-    def __init__(self,yaml):
-        self.uid = yaml['id']
-        self.size = yaml['size']
+    def __init__(self,uid, sz):
+        self.uid = uid
+        self.size = sz
 
 class Task:
-    def __init__(self,uid,yaml,datas):
-        self.name = yaml['name']
+    def __init__(self,uid):
+        self.name = "t%u" % uid
         self.uid = uid
-        self.size = yaml['size']
+        self.size = 1
         self.allocs = []
-        for i in xrange(yaml['numallocs']):
-            self.allocs.append(datas[yaml['allocs'][i]])
         self.args = []
-        for i in xrange(yaml['numargs']):
-            h = {}
-            h['id'] = yaml['args'][i]['id']
-            h['type'] = yaml['args'][i]['type']
-            self.args.append(h)
         self.children = []
-        for i in xrange(yaml['numchildren']):
-            self.children.append(yaml['children'][i])
 
     def finalize(self,names):
         for i in xrange(len(self.children)):
@@ -39,14 +35,16 @@ class Task:
         h.update(struct.pack("@L",self.uid))
         # then hash each in parameter
         for i,a in enumerate(self.args):
-            if a['type'] == 'IN':
-                assert a['id'] in dh
-                #print "update", self.uid, a['id'], repr(dh[a['id']])
-                h.update(dh[a['id']])
+            if a.access == 'IN':
+                assert a.uid in dh
+                logging.debug("update: %u %u %s", self.uid, a.uid,
+                        repr(dh[a.uid]))
+                h.update(dh[a.uid])
         # init allocs
         for i,d in enumerate(self.allocs):
             dh[d.uid] = bytearray(d.size)
-            #print "initalloc", self.uid, d.uid, repr(dh[d.uid])
+            logging.debug("initalloc: %u %u %s", self.uid, d.uid,
+                    repr(dh[d.uid]))
         # rehash the state size times
         d = h.digest()
         for i in xrange(1,self.size):
@@ -58,11 +56,11 @@ class Task:
         # save this value as the task digest
         g = h.copy()
         taskd = g.hexdigest()
-        #print "taskd", self.uid, taskd
+        logging.debug("taskd: %u %s", self.uid, taskd)
         # now compute each out digest
         for i,a in enumerate(self.args):
-            d = datas[a['id']]
-            if a['type'] == 'OUT':
+            d = datas[a.uid]
+            if a.access == 'OUT':
                 g = h.copy()
                 g.update(struct.pack("@I",i))
                 ah = g.digest()
@@ -70,32 +68,55 @@ class Task:
                 l = min(g.digest_size,d.size)
                 real_hash[:l] = ah[:l]
                 dh[d.uid] = real_hash
-                #print "touchout", self.uid, d.uid, i, repr(dh[d.uid]),repr(ah),repr(g.hexdigest()),l
+                logging.debug("touchout: %u %u %u %s %s %s %u",self.uid, d.uid,
+                            i, repr(dh[d.uid]),repr(ah),repr(g.hexdigest()),l)
         return taskd
 
 
 ### Main function
 parser = argparse.ArgumentParser()
 parser.add_argument("graph",type=argparse.FileType('r'))
-parser.add_argument("log",type=argparse.FileType('r'))
+parser.add_argument("trace",type=argparse.FileType('r'))
+parser.add_argument("-d","--debug",help="show additional debug output",
+                    action="store_true")
 argv = parser.parse_args()
+if argv.debug:
+    logging.basicConfig(level=logging.DEBUG)
+else:
+    logging.basicConfig(level=logging.WARNING)
 
-print "checking graph \'%s\' with log \'%s\'" %(argv.graph.name,argv.log.name)
-print "==== CHECKING"
+print "checking graph \'%s\' with trace \'%s\'" %(argv.graph.name,argv.trace.name)
+print "==== PARSING DATA"
 
-tree = {}
-tree = yaml.load(argv.graph)
-
-N = tree['N']
-M = tree['M']
-
+graph = {}
+N = 0
+M = 0
 datas = []
-for i in xrange(M):
-    datas.append(Data(tree['data'][i]))
-    assert i == datas[i].uid
 tasks = []
+import yaml
+graph = yaml.load(argv.graph)
+
+N = graph['N']
+M = graph['M']
+
+for i in xrange(M):
+    uid = graph['data'][i]['id']
+    size = graph['data'][i]['size']
+    datas.append(Data(uid,size))
+    assert i == datas[i].uid
 for i in xrange(N):
-    tasks.append(Task(i,tree['tasks'][i],datas))
+    t = Task(i)
+    d = graph['tasks'][i]
+    t.name = d['name']
+    t.size = d['size']
+    for j in xrange(d['numallocs']):
+        t.allocs.append(datas[d['allocs'][j]])
+    for j in xrange(d['numargs']):
+        uid = d['args'][j]['id']
+        a = d['args'][j]['type']
+        t.args.append(Arg(uid,a))
+    # children can be ignored
+    tasks.append(t)
 names = {}
 for t in tasks:
     names[t.name] = t
@@ -103,7 +124,7 @@ for t in tasks:
     t.finalize(names)
 
 # parse log file:
-lines = argv.log.readlines()
+lines = argv.trace.readlines()
 # remove the last one, its just the timing
 del lines[-1]
 # now dict everything
@@ -114,6 +135,7 @@ for l in lines:
     d = fields[1]
     digests[name] = d
 
+print "==== CHECKING"
 # check each task sha, by recomputing it.
 thashes = {}
 dhashes = {}
