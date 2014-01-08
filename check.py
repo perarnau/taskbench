@@ -79,6 +79,11 @@ parser.add_argument("graph",type=argparse.FileType('r'))
 parser.add_argument("trace",type=argparse.FileType('r'))
 parser.add_argument("-d","--debug",help="show additional debug output",
                     action="store_true")
+parser.add_argument("--data-size-key",help="name of the data size key", 
+                    default="size")
+parser.add_argument("--task-size-key",help="name of the task size key",
+                    default="size")
+
 argv = parser.parse_args()
 if argv.debug:
     logging.basicConfig(level=logging.DEBUG)
@@ -101,14 +106,14 @@ M = graph['M']
 
 for i in xrange(M):
     uid = graph['data'][i]['id']
-    size = graph['data'][i]['size']
+    size = graph['data'][i][argv.data_size_key]
     datas.append(Data(uid,size))
     assert i == datas[i].uid
 for i in xrange(N):
     t = Task(i)
     d = graph['tasks'][i]
     t.name = d['name']
-    t.size = d['size']
+    t.size = d[argv.task_size_key]
     for j in xrange(d['numallocs']):
         t.allocs.append(datas[d['allocs'][j]])
     for j in xrange(d['numargs']):
