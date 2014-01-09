@@ -44,7 +44,7 @@ class Kaapi:
     def task_register(self,task):
         name = task.name
         numargs = len(task.args)
-        print >>self.out, "typedef struct %s_arg_t {" % name 
+        print >>self.out, "typedef struct %s_arg_t {" % name
         for i in xrange(numargs):
             print >>self.out, "  kaapi_access_t arg%u;" % i
         print >>self.out, "} %s_arg_t;" % name
@@ -116,7 +116,7 @@ class Kaapi:
             print >>self.out, "        kaapi_thread_pushdata(thread, sizeof(%s_arg_t)));" % t.name
             print >>self.out, "    arg%u = kaapi_task_getargst(ktasks[%u],%s_arg_t);" % (i,i,t.name)
             for j,a in enumerate(t.args):
-                if a['id'] in allocs: 
+                if a['id'] in allocs:
                     print >>self.out, "    kaapi_access_init(&arg%u->arg%u,datas[%u].mem);" % (i,j,a['id'])
                 else:
                     print >>self.out, "    arg%u->arg%u.data = datas[%u].mem;" % (i,j,a['id'])
@@ -139,6 +139,159 @@ class Kaapi:
         
     def main_finalize(self):
         print >>self.out, "    kaapi_finalize();"
+
+class StarPU:
+    def __init__(self,output):
+        self.out = output
+        pass
+
+    def includes(self):
+       print >>self.out, "#include<starpu.h>"
+
+    def task_body_prototype(self,task):
+        print >>self.out, "void {0}_body (void *buffers[], void *cl_arg);".format(task.name)
+
+    def task_register(self,task):
+        name = task.name
+        numargs = len(task.args)
+        print >>self.out, "struct starpu_codelet %s_cl =" % name
+        print >>self.out, "{"
+        print >>self.out, ".cpu_funcs = { %s_body, NULL }," % name
+        print >>self.out, ".nbuffers = %u," % numargs
+        self.out.write(".modes = {")
+        for a in task.args:
+            if a['type'] == "IN":
+                self.out.write("STARPU_R, ")
+            else:
+                self.out.write("STARPU_W, ")
+        print >>self.out, "}"
+        print >>self.out, "};"
+
+    def task_body(self,task):
+        print >>self.out, "void {0}_body (void *buffers[], void *cl_arg)".format(task.name)
+        print >>self.out, "{"
+        # declare everything
+        if task.children:
+            print >>self.out, "    struct starpu_task *stasks[%u];" % len(task.children)
+        print >>self.out, "    task_t *t = &tasks[%u];" % task.uid
+        print >>self.out, "    void *context;"
+        # maybe data handles ?
+        print >>self.out, "    starpu_data_handle_t handles[%u];" % len(task.allocs)
+        # allocate new data
+        print >>self.out, "    for(unsigned int i = 0; i < t->num_allocs; i++)"
+        print >>self.out, "    {"
+        print >>self.out, "        data_t *d = t->allocs[i];"
+        print >>self.out, "        d->mem = calloc(d->size,1);"
+        # register them
+        print >>self.out, "        starpu_vector_data_register(&handles[i],0, (uintptr_t)d->mem,d->size,1);"
+        print >>self.out, "    }"
+        # pass IN args to core
+        print >>self.out, "    depbench_core_init(%u,&context);" % task.uid
+        for i in xrange(len(task.args)):
+            if task.args[i]['type'] == 'IN':
+                print >>self.out, "    depbench_core_touch_in(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i]['id'], task.args[i]['id'],i)
+        # hash size times
+        print >>self.out, "    depbench_core_do_work(%u, context,t->size);" % task.uid
+        print >>self.out, "    depbench_core_save_state(%u,context);" % task.uid
+        # write to output variables
+        for i in xrange(len(task.args)):
+            if task.args[i]['type'] == 'OUT':
+                print >>self.out, "    depbench_core_touch_out(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i]['id'], task.args[i]['id'], i)
+        # spawn
+        for i,t  in enumerate(task.children):
+            print >>self.out, "    stasks[%u] = starpu_task_create();" % i
+            print >>self.out, "    stasks[%u]->cl = &%s_cl;" % (i,t.name)
+            for j,a in enumerate(t.args):
+                allocids = [x.uid for x in task.allocs]
+                assert a['id'] in allocids
+                print >>self.out, "    stasks[%u]->handles[%u] = handles[%u];" % (i,j,allocids.index(a['id']))
+            print >>self.out, "    starpu_task_submit(stasks[%u]);" % i
+        print >>self.out, "}"
+
+    def main_definitions(self):
+        print >>self.out, "    struct starpu_task *task;"
+
+    def main_init(self):
+        print >>self.out, "    starpu_init(NULL);"
+
+    def main_spawnsource(self,source):
+        print >>self.out, "    task = starpu_task_create();"
+        print >>self.out, "    task->cl = &{0}_cl;".format(source.name)
+        print >>self.out, "    starpu_task_submit(task);"
+        print >>self.out, "    starpu_task_wait_for_all();"
+
+    def main_finalize(self):
+        print >>self.out, "    starpu_shutdown();"
+
+class OmpSs:
+    def __init__(self,output):
+        self.out = output
+
+    def includes(self):
+        print >>self.out, "#include<stdlib.h>"
+
+    def task_body_prototype(self,task):
+        self.out.write("void {0}_body (".format(task.name))
+        self.out.write(",".join(["void *arg%u" % i for i in xrange(len(task.args))]))
+        print >>self.out, ");"
+
+
+    def task_register(self,task):
+        pass
+
+    def task_body(self,task):
+        self.out.write("void {0}_body (".format(task.name))
+        self.out.write(",".join(["void *arg%u" % i for i in xrange(len(task.args))]))
+        print >>self.out, ")"
+        print >>self.out, "{"
+        # declare everything
+        print >>self.out, "    task_t *t = &tasks[%u];" % task.uid
+        print >>self.out, "    void *context;"
+        # allocate new data
+        print >>self.out, "    for(unsigned int i = 0; i < t->num_allocs; i++)"
+        print >>self.out, "    {"
+        print >>self.out, "        data_t *d = t->allocs[i];"
+        print >>self.out, "        d->mem = calloc(d->size,1);"
+        print >>self.out, "    }"
+        # pass IN args to core
+        print >>self.out, "    depbench_core_init(%u,&context);" % task.uid
+        for i in xrange(len(task.args)):
+            if task.args[i]['type'] == 'IN':
+                print >>self.out, "    depbench_core_touch_in(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i]['id'], task.args[i]['id'],i)
+        # hash size times
+        print >>self.out, "    depbench_core_do_work(%u, context,t->size);" % task.uid
+        print >>self.out, "    depbench_core_save_state(%u,context);" % task.uid
+        # write to output variables
+        for i in xrange(len(task.args)):
+            if task.args[i]['type'] == 'OUT':
+                print >>self.out, "    depbench_core_touch_out(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i]['id'], task.args[i]['id'], i)
+        # spawn
+        for i,t  in enumerate(task.children):
+            self.out.write("#pragma omp task ")
+            for j,a in enumerate(t.args):
+                if a['type'] == 'IN':
+                    self.out.write("in(datas[%u].mem [ datas[%u].size ]) " % (a['id'],a['id']))
+                else:
+                    self.out.write("out(datas[%u].mem [ datas[%u].size ]) " % (a['id'],a['id']))
+            print >>self.out,""
+            self.out.write("    {0}_body(".format(t.name))
+            self.out.write(",".join(["datas[{0}].mem".format(a['id']) for a in t.args]))
+            print >>self.out, ");"
+        print >>self.out, "}"
+
+    def main_definitions(self):
+        pass
+
+    def main_init(self):
+        pass
+
+    def main_spawnsource(self,source):
+        print >>self.out, "#pragma omp task"
+        print >>self.out, "    {0}_body();".format(source.name);
+        print >>self.out, "#pragma omp taskwait"
+
+    def main_finalize(self):
+        pass
 
 class Cdriver:
     def __init__(self,output):
@@ -209,7 +362,7 @@ void depbench_core_init(unsigned long taskid, void **context)
         kern_metas[taskid].args_h[i] = calloc(tasks[taskid].args[i]->size,sizeof(sha1_byte));
 }
 
-void depbench_core_touch_in(unsigned long taskid, void *context, 
+void depbench_core_touch_in(unsigned long taskid, void *context,
                         void *data, unsigned long size, unsigned int argnum)
 {
     unsigned long i;
@@ -222,7 +375,7 @@ void depbench_core_touch_in(unsigned long taskid, void *context,
 }
 
 #define min(x,y) ((x) < (y) ? (x) : (y))
-void depbench_core_touch_out(unsigned long taskid, void *context, 
+void depbench_core_touch_out(unsigned long taskid, void *context,
                         void *data, unsigned long size, unsigned int argnum)
 {
     /* copy the context, update with arg number, finalize and write */
@@ -321,8 +474,9 @@ int main(int argc, char *argv[])
 
 
 ### Main function
+drivers = { 'kaapi': Kaapi, 'starpu': StarPU, 'ompss': OmpSs }
 parser = argparse.ArgumentParser()
-parser.add_argument("--target",choices=['kaapi'],default='kaapi')
+parser.add_argument("--target",choices=drivers.keys(),default=drivers.keys()[0])
 parser.add_argument("--kernel",choices=['verif'],default='verif')
 parser.add_argument("infile",type=argparse.FileType('r'))
 argv = parser.parse_args()
@@ -350,7 +504,7 @@ for t in tasks:
 
 # Generate the program
 import sys
-driver = Kaapi(sys.stdout)
+driver = drivers[argv.target](sys.stdout)
 driver.includes()
 # global data
 gdriver = Cdriver(sys.stdout)
