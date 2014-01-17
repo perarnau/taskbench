@@ -293,6 +293,77 @@ class OmpSs:
     def main_finalize(self):
         pass
 
+class Quark:
+    def __init__(self,output):
+        self.out = output
+        pass
+
+    def includes(self):
+       print >>self.out, "#include<quark.h>"
+
+    def task_body_prototype(self,task):
+        print >>self.out, "void {0}_body (Quark *);".format(task.name)
+
+    def task_register(self,task):
+        pass
+
+    def task_body(self,task):
+        print >>self.out, "void {0}_body (Quark *quark)".format(task.name)
+        print >>self.out, "{"
+        # declare everything
+        if task.children:
+            print >>self.out, "    Quark_Task *qtasks[%u];" % len(task.children)
+        print >>self.out, "    task_t *t = &tasks[%u];" % task.uid
+        print >>self.out, "    void *context;"
+        # allocate new data
+        print >>self.out, "    for(unsigned int i = 0; i < t->num_allocs; i++)"
+        print >>self.out, "    {"
+        print >>self.out, "        data_t *d = t->allocs[i];"
+        print >>self.out, "        d->mem = calloc(d->size,1);"
+        print >>self.out, "    }"
+        # pass IN args to core
+        print >>self.out, "    depbench_core_init(%u,&context);" % task.uid
+        for i in xrange(len(task.args)):
+            if task.args[i]['type'] == 'IN':
+                print >>self.out, "    depbench_core_touch_in(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i]['id'], task.args[i]['id'],i)
+        # hash size times
+        print >>self.out, "    depbench_core_do_work(%u, context,t->size);" % task.uid
+        print >>self.out, "    depbench_core_save_state(%u,context);" % task.uid
+        # write to output variables
+        for i in xrange(len(task.args)):
+            if task.args[i]['type'] == 'OUT':
+                print >>self.out, "    depbench_core_touch_out(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i]['id'], task.args[i]['id'], i)
+        # quark doesn't support task children.
+        print >>self.out, "}"
+
+    def main_definitions(self):
+        print >>self.out, "    Quark *quark;"
+        print >>self.out, "    Quark_Task *task;"
+        print >>self.out, "    Quark_Task_Flags task_flags = Quark_Task_Flags_Initializer;"
+
+    def main_init(self):
+        print >>self.out, "    quark = QUARK_New(0);"
+
+    def main_spawnsource(self,source):
+        # since all tasks must be create by thread 0, we call source's body
+        # without tasking, and create its children after.
+        print >>self.out, "    {0}_body(quark);".format(source.name)
+        for i,t in enumerate(source.children):
+            print >>self.out, "    task = QUARK_Task_Init(quark,%s_body,&task_flags);" % t.name
+            for a in t.args:
+                self.out.write("    QUARK_Task_Pack_Arg(quark,task,datas[{0}].size,datas[{0}].mem,".format(a['id']));
+                if a['type'] == 'IN':
+                    print >>self.out, "INPUT);"
+                else:
+                    print >>self.out, "OUTPUT);"
+            print >>self.out, "    QUARK_Insert_Task_Packed(quark,task);"
+        print >>self.out, "    QUARK_Waitall(quark);"
+
+    def main_finalize(self):
+        print >>self.out, "    QUARK_Delete(quark);"
+        pass
+
+
 class Cdriver:
     def __init__(self,output):
         self.out = output
@@ -474,7 +545,7 @@ int main(int argc, char *argv[])
 
 
 ### Main function
-drivers = { 'kaapi': Kaapi, 'starpu': StarPU, 'ompss': OmpSs }
+drivers = { 'kaapi': Kaapi, 'starpu': StarPU, 'ompss': OmpSs, 'quark' : Quark }
 parser = argparse.ArgumentParser()
 parser.add_argument("--target",choices=drivers.keys(),default=drivers.keys()[0])
 parser.add_argument("--kernel",choices=['verif'],default='verif')
