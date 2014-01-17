@@ -2,28 +2,24 @@
 import yaml
 import argparse
 
+class Arg:
+    def __init__(self,uid,t):
+        self.uid = uid
+        self.access = t
+
 class Data:
-    def __init__(self,yaml):
-        self.uid = yaml['id']
-        self.size = yaml['size']
+    def __init__(self,uid, sz):
+        self.uid = uid
+        self.size = sz
 
 class Task:
-    def __init__(self,uid,yaml,datas):
-        self.name = yaml['name']
+    def __init__(self,uid):
+        self.name = "t%u" % uid
         self.uid = uid
-        self.size = yaml['size']
+        self.size = 1
         self.allocs = []
-        for i in xrange(yaml['numallocs']):
-            self.allocs.append(datas[yaml['allocs'][i]])
         self.args = []
-        for i in xrange(yaml['numargs']):
-            h = {}
-            h['id'] = yaml['args'][i]['id']
-            h['type'] = yaml['args'][i]['type']
-            self.args.append(h)
         self.children = []
-        for i in xrange(yaml['numchildren']):
-            self.children.append(yaml['children'][i])
 
     def finalize(self,names):
         for i in xrange(len(self.children)):
@@ -54,7 +50,7 @@ class Kaapi:
 
         self.out.write("    (kaapi_access_mode_t[]) { ")
         for a in task.args:
-            if a['type'] == "IN":
+            if a.access == "IN":
                 self.out.write("KAAPI_ACCESS_MODE_R, ")
             else:
                 self.out.write("KAAPI_ACCESS_MODE_W, ")
@@ -100,15 +96,21 @@ class Kaapi:
         print >>self.out, "    {0}_arg_t* arg = ({0}_arg_t*)taskarg;".format(task.name)
         print >>self.out, "    depbench_core_init(%u,&context);" % task.uid
         for i in xrange(len(task.args)):
-            if task.args[i]['type'] == 'IN':
-                print >>self.out, "    depbench_core_touch_in(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i]['id'], task.args[i]['id'],i)
+            if task.args[i].access == 'IN':
+                print >>self.out, "    depbench_core_touch_in(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i].uid, task.args[i].uid,i)
         # hash size times
         print >>self.out, "    depbench_core_do_work(%u, context,t->size);" % task.uid
         print >>self.out, "    depbench_core_save_state(%u,context);" % task.uid
+        # touch allocated memory
+        print >>self.out, "    for(unsigned int i = 0; i < t->num_allocs; i++)"
+        print >>self.out, "    {"
+        print >>self.out, "        data_t *d = t->allocs[i];"
+        print >>self.out, "        depbench_core_touch_alloc(%u,context,d->mem,d->size,i);" % task.uid
+        print >>self.out, "    }"
         # write to output variables
         for i in xrange(len(task.args)):
-            if task.args[i]['type'] == 'OUT':
-                print >>self.out, "    depbench_core_touch_out(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i]['id'], task.args[i]['id'], i)
+            if task.args[i].access == 'OUT':
+                print >>self.out, "    depbench_core_touch_out(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i].uid, task.args[i].uid, i)
         # spawn
         for i,t  in enumerate(task.children):
             print >>self.out, "    ktasks[%u] = kaapi_thread_toptask(thread);" % i
@@ -116,10 +118,10 @@ class Kaapi:
             print >>self.out, "        kaapi_thread_pushdata(thread, sizeof(%s_arg_t)));" % t.name
             print >>self.out, "    arg%u = kaapi_task_getargst(ktasks[%u],%s_arg_t);" % (i,i,t.name)
             for j,a in enumerate(t.args):
-                if a['id'] in allocs:
-                    print >>self.out, "    kaapi_access_init(&arg%u->arg%u,datas[%u].mem);" % (i,j,a['id'])
+                if a.uid in allocs:
+                    print >>self.out, "    kaapi_access_init(&arg%u->arg%u,datas[%u].mem);" % (i,j,a.uid)
                 else:
-                    print >>self.out, "    arg%u->arg%u.data = datas[%u].mem;" % (i,j,a['id'])
+                    print >>self.out, "    arg%u->arg%u.data = datas[%u].mem;" % (i,j,a.uid)
             print >>self.out, "    kaapi_thread_pushtask(thread);"
         print >>self.out, "}"
 
@@ -160,7 +162,7 @@ class StarPU:
         print >>self.out, ".nbuffers = %u," % numargs
         self.out.write(".modes = {")
         for a in task.args:
-            if a['type'] == "IN":
+            if a.access == "IN":
                 self.out.write("STARPU_R, ")
             else:
                 self.out.write("STARPU_W, ")
@@ -188,23 +190,29 @@ class StarPU:
         # pass IN args to core
         print >>self.out, "    depbench_core_init(%u,&context);" % task.uid
         for i in xrange(len(task.args)):
-            if task.args[i]['type'] == 'IN':
-                print >>self.out, "    depbench_core_touch_in(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i]['id'], task.args[i]['id'],i)
+            if task.args[i].access == 'IN':
+                print >>self.out, "    depbench_core_touch_in(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i].uid, task.args[i].uid,i)
         # hash size times
         print >>self.out, "    depbench_core_do_work(%u, context,t->size);" % task.uid
         print >>self.out, "    depbench_core_save_state(%u,context);" % task.uid
+        # touch allocated memory
+        print >>self.out, "    for(unsigned int i = 0; i < t->num_allocs; i++)"
+        print >>self.out, "    {"
+        print >>self.out, "        data_t *d = t->allocs[i];"
+        print >>self.out, "        depbench_core_touch_alloc(%u,context,d->mem,d->size,i);" % task.uid
+        print >>self.out, "    }"
         # write to output variables
         for i in xrange(len(task.args)):
-            if task.args[i]['type'] == 'OUT':
-                print >>self.out, "    depbench_core_touch_out(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i]['id'], task.args[i]['id'], i)
+            if task.args[i].access == 'OUT':
+                print >>self.out, "    depbench_core_touch_out(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i].uid, task.args[i].uid, i)
         # spawn
         for i,t  in enumerate(task.children):
             print >>self.out, "    stasks[%u] = starpu_task_create();" % i
             print >>self.out, "    stasks[%u]->cl = &%s_cl;" % (i,t.name)
             for j,a in enumerate(t.args):
                 allocids = [x.uid for x in task.allocs]
-                assert a['id'] in allocids
-                print >>self.out, "    stasks[%u]->handles[%u] = handles[%u];" % (i,j,allocids.index(a['id']))
+                assert a.uid in allocids
+                print >>self.out, "    stasks[%u]->handles[%u] = handles[%u];" % (i,j,allocids.index(a.uid))
             print >>self.out, "    starpu_task_submit(stasks[%u]);" % i
         print >>self.out, "}"
 
@@ -256,26 +264,32 @@ class OmpSs:
         # pass IN args to core
         print >>self.out, "    depbench_core_init(%u,&context);" % task.uid
         for i in xrange(len(task.args)):
-            if task.args[i]['type'] == 'IN':
-                print >>self.out, "    depbench_core_touch_in(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i]['id'], task.args[i]['id'],i)
+            if task.args[i].access == 'IN':
+                print >>self.out, "    depbench_core_touch_in(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i].uid, task.args[i].uid,i)
         # hash size times
         print >>self.out, "    depbench_core_do_work(%u, context,t->size);" % task.uid
         print >>self.out, "    depbench_core_save_state(%u,context);" % task.uid
+        # touch allocated memory
+        print >>self.out, "    for(unsigned int i = 0; i < t->num_allocs; i++)"
+        print >>self.out, "    {"
+        print >>self.out, "        data_t *d = t->allocs[i];"
+        print >>self.out, "        depbench_core_touch_alloc(%u,context,d->mem,d->size,i);" % task.uid
+        print >>self.out, "    }"
         # write to output variables
         for i in xrange(len(task.args)):
-            if task.args[i]['type'] == 'OUT':
-                print >>self.out, "    depbench_core_touch_out(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i]['id'], task.args[i]['id'], i)
+            if task.args[i].access == 'OUT':
+                print >>self.out, "    depbench_core_touch_out(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i].uid, task.args[i].uid, i)
         # spawn
         for i,t  in enumerate(task.children):
             self.out.write("#pragma omp task ")
             for j,a in enumerate(t.args):
-                if a['type'] == 'IN':
-                    self.out.write("in(datas[%u].mem [ datas[%u].size ]) " % (a['id'],a['id']))
+                if a.access == 'IN':
+                    self.out.write("in(datas[%u].mem [ datas[%u].size ]) " % (a.uid,a.uid))
                 else:
-                    self.out.write("out(datas[%u].mem [ datas[%u].size ]) " % (a['id'],a['id']))
+                    self.out.write("out(datas[%u].mem [ datas[%u].size ]) " % (a.uid,a.uid))
             print >>self.out,""
             self.out.write("    {0}_body(".format(t.name))
-            self.out.write(",".join(["datas[{0}].mem".format(a['id']) for a in t.args]))
+            self.out.write(",".join(["datas[{0}].mem".format(a.uid) for a in t.args]))
             print >>self.out, ");"
         print >>self.out, "}"
 
@@ -324,15 +338,21 @@ class Quark:
         # pass IN args to core
         print >>self.out, "    depbench_core_init(%u,&context);" % task.uid
         for i in xrange(len(task.args)):
-            if task.args[i]['type'] == 'IN':
-                print >>self.out, "    depbench_core_touch_in(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i]['id'], task.args[i]['id'],i)
+            if task.args[i].access == 'IN':
+                print >>self.out, "    depbench_core_touch_in(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i].uid, task.args[i].uid,i)
         # hash size times
         print >>self.out, "    depbench_core_do_work(%u, context,t->size);" % task.uid
         print >>self.out, "    depbench_core_save_state(%u,context);" % task.uid
+        # touch allocated memory
+        print >>self.out, "    for(unsigned int i = 0; i < t->num_allocs; i++)"
+        print >>self.out, "    {"
+        print >>self.out, "        data_t *d = t->allocs[i];"
+        print >>self.out, "        depbench_core_touch_alloc(%u,context,d->mem,d->size,i);" % task.uid
+        print >>self.out, "    }"
         # write to output variables
         for i in xrange(len(task.args)):
-            if task.args[i]['type'] == 'OUT':
-                print >>self.out, "    depbench_core_touch_out(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i]['id'], task.args[i]['id'], i)
+            if task.args[i].access == 'OUT':
+                print >>self.out, "    depbench_core_touch_out(%u,context,datas[%u].mem,datas[%u].size,%u);" % (task.uid, task.args[i].uid, task.args[i].uid, i)
         # quark doesn't support task children.
         print >>self.out, "}"
 
@@ -351,8 +371,8 @@ class Quark:
         for i,t in enumerate(source.children):
             print >>self.out, "    task = QUARK_Task_Init(quark,%s_body,&task_flags);" % t.name
             for a in t.args:
-                self.out.write("    QUARK_Task_Pack_Arg(quark,task,datas[{0}].size,datas[{0}].mem,".format(a['id']));
-                if a['type'] == 'IN':
+                self.out.write("    QUARK_Task_Pack_Arg(quark,task,datas[{0}].size,datas[{0}].mem,".format(a.uid));
+                if a.access == 'IN':
                     print >>self.out, "INPUT);"
                 else:
                     print >>self.out, "OUTPUT);"
@@ -454,7 +474,7 @@ void depbench_core_touch_out(unsigned long taskid, void *context,
     unsigned long i;
     sha1_byte digest[SHA1_DIGEST_LENGTH];
     memcpy(&ctxt,context,sizeof(SHA_CTX));
-    SHA1_Update(&ctxt,(sha1_byte*)&argnum,sizeof(argnum));
+    //SHA1_Update(&ctxt,(sha1_byte*)&argnum,sizeof(argnum));
     SHA1_Final(digest,&ctxt);
     //printf("outd %p ",data);
     //for(i = 0; i < SHA1_DIGEST_LENGTH ; i++)
@@ -466,6 +486,16 @@ void depbench_core_touch_out(unsigned long taskid, void *context,
     //for(i = 0; i< size; i++)
     //    printf("%02hx",((unsigned short *)data)[i]);
     //printf("\\n");
+}
+
+void depbench_core_touch_alloc(unsigned long taskid, void *context,
+                        void *data, unsigned long size, unsigned int argnum)
+{
+    SHA_CTX ctxt;
+    sha1_byte digest[SHA1_DIGEST_LENGTH];
+    memcpy(&ctxt,context,sizeof(SHA_CTX));
+    SHA1_Final(digest,&ctxt);
+    memcpy(data,digest,min(size,SHA1_DIGEST_LENGTH));
 }
 
 void depbench_core_do_work(unsigned long taskid, void *context, unsigned long size)
@@ -526,7 +556,7 @@ int main(int argc, char *argv[])
                 print >>self.out, "    tasks[%u].allocs[%u] = &datas[%u];" %(i,j,d.uid)
             print >>self.out, "    tasks[%u].args = calloc(%u,sizeof(data_t *));" % (i,len(t.args))
             for j,a in enumerate(t.args):
-                print >>self.out, "    tasks[%u].args[%u] = &datas[%u];" % (i,j,a['id'])
+                print >>self.out, "    tasks[%u].args[%u] = &datas[%u];" % (i,j,a.uid)
             print >>self.out, "    tasks[%u].children = calloc(%u,sizeof(task_t *));" % (i,len(t.children))
             for j,c in enumerate(t.children):
                 print >>self.out, "    tasks[%u].children[%u] = &tasks[%u];" % (i,j,c.uid)
@@ -549,24 +579,45 @@ drivers = { 'kaapi': Kaapi, 'starpu': StarPU, 'ompss': OmpSs, 'quark' : Quark }
 parser = argparse.ArgumentParser()
 parser.add_argument("--target",choices=drivers.keys(),default=drivers.keys()[0])
 parser.add_argument("--kernel",choices=['verif'],default='verif')
+parser.add_argument("--data-size-key",help="name of the data size key",
+                    default="size")
+parser.add_argument("--task-size-key",help="name of the task size key",
+                    default="weight")
 parser.add_argument("infile",type=argparse.FileType('r'))
 argv = parser.parse_args()
 
 print "//using file " + argv.infile.name + " as input"
 
-tree = {}
-tree = yaml.load(argv.infile)
-
-N = tree['N']
-M = tree['M']
-
+graph = {}
+N = 0
+M = 0
 datas = []
-for i in xrange(M):
-    datas.append(Data(tree['data'][i]))
-    assert i == datas[i].uid
 tasks = []
+import yaml
+graph = yaml.load(argv.infile)
+
+N = graph['N']
+M = graph['M']
+
+for i in xrange(M):
+    uid = graph['data'][i]['id']
+    size = graph['data'][i][argv.data_size_key]
+    datas.append(Data(uid,size))
+    assert i == datas[i].uid
 for i in xrange(N):
-    tasks.append(Task(i,tree['tasks'][i],datas))
+    t = Task(i)
+    d = graph['tasks'][i]
+    t.name = d['name']
+    t.size = d[argv.task_size_key]
+    for j in xrange(d['numallocs']):
+        t.allocs.append(datas[d['allocs'][j]])
+    for j in xrange(d['numargs']):
+        uid = d['args'][j]['id']
+        a = d['args'][j]['type']
+        t.args.append(Arg(uid,a))
+    for j in xrange(d['numchildren']):
+        t.children.append(d['children'][j])
+    tasks.append(t)
 names = {}
 for t in tasks:
     names[t.name] = t
