@@ -433,7 +433,7 @@ class Cdriver:
                 self.out.write("%u, " % t.uid)
         print >>self.out, "};"
 
-    def verif_kernel(self):
+    def kernel_verif(self):
         # print function definitions for the kernel suite of functions
         print >>self.out, """
 #include <string.h>
@@ -549,6 +549,44 @@ void depbench_core_print_meta(unsigned long taskid, char *taskname)
 }
 """
 
+    def kernel_add(self):
+        print >>self.out, """
+void depbench_core_init(unsigned long taskid, void **context)
+{
+    *context = malloc(sizeof(unsigned long));
+}
+
+void depbench_core_touch_in(unsigned long taskid, void *context,
+                        void *data, unsigned long size, unsigned int argnum)
+{
+}
+
+void depbench_core_touch_out(unsigned long taskid, void *context,
+                        void *data, unsigned long size, unsigned int argnum)
+{
+}
+
+void depbench_core_touch_alloc(unsigned long taskid, void *context,
+                        void *data, unsigned long size, unsigned int argnum)
+{
+}
+
+void depbench_core_do_work(unsigned long taskid, void *context, unsigned long size)
+{
+    unsigned long i;
+    unsigned long *p = (unsigned long *)context;
+    for(i = 0; i < size*(1<<20); i++)
+        *context += 2*i + *context;
+}
+
+void depbench_core_save_state(unsigned long taskid, void *context)
+{
+}
+
+void depbench_core_print_meta(unsigned long taskid, char *taskname)
+{
+}
+"""
 
     def main(self,driver,tasks):
         print >>self.out, """
@@ -583,9 +621,10 @@ int main(int argc, char *argv[])
 
 ### Main function
 drivers = { 'kaapi': Kaapi, 'starpu': StarPU, 'ompss': OmpSs, 'quark' : Quark }
+kernels = { 'verif': "kernel_verif", 'add': 'kernel_add' }
 parser = argparse.ArgumentParser()
 parser.add_argument("--target",choices=drivers.keys(),default=drivers.keys()[0])
-parser.add_argument("--kernel",choices=['verif'],default='verif')
+parser.add_argument("--kernel",choices=kernels.keys(),default='verif')
 parser.add_argument("--data-size-key",help="name of the data size key",
                     default="size")
 parser.add_argument("--task-size-key",help="name of the task size key",
@@ -643,7 +682,9 @@ driver.includes()
 gdriver = Cdriver(sys.stdout)
 gdriver.includes()
 gdriver.global_symbols(tasks,datas)
-gdriver.verif_kernel()
+# print kernel
+k = getattr(gdriver,kernels[argv.kernel])
+k()
 # task bodies prototypes
 for t in tasks:
     driver.task_body_prototype(t)
