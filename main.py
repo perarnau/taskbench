@@ -625,6 +625,7 @@ kernels = { 'verif': "kernel_verif", 'add': 'kernel_add' }
 parser = argparse.ArgumentParser()
 parser.add_argument("--target",choices=drivers.keys(),default=drivers.keys()[0])
 parser.add_argument("--kernel",choices=kernels.keys(),default='verif')
+parser.add_argument("--nedges",type=int,help="increase the number of edges",default=1)
 parser.add_argument("--data-size-key",help="name of the data size key",
                     default="size")
 parser.add_argument("--task-size-key",help="name of the task size key",
@@ -673,6 +674,28 @@ for t in tasks:
 # transform all names, to be function name compatible
 for t in tasks:
     t.name = "t_%s" % t.name
+
+# apply modifications to the graph
+if argv.nedges != 1:
+    newd = []
+    for d in datas:
+        for i in xrange(argv.nedges):
+            nd = Data(d.uid*argv.nedges+i,d.size)
+            newd.append(nd)
+    datas = newd
+    for t in tasks:
+        newa = []
+        for a in t.allocs:
+            for j in xrange(argv.nedges):
+                newa.append(datas[a.uid*argv.nedges+j])
+        t.allocs = newa
+        newa = []
+        for a in t.args:
+            for j in xrange(argv.nedges):
+                newa.append(Arg(a.uid*argv.nedges+j,a.access))
+        t.args = newa
+    M = M*argv.nedges
+
 
 # Generate the program
 import sys
