@@ -18,7 +18,7 @@ class Data:
 
 class Task:
     def __init__(self,uid):
-        self.name = "t%u" % uid
+        self.name = "t_%u" % uid
         self.uid = uid
         self.size = 1
         self.allocs = []
@@ -32,18 +32,18 @@ class Task:
     def compute_hash(self,th,dh,datas):
         # start by hashing the task uid
         h = hashlib.sha1()
-        h.update(struct.pack("@L",self.uid))
+        h.update(self.name)
         # then hash each in parameter
         for a in self.args:
             if a.access == 'IN':
                 assert a.uid in dh
-                logging.debug("update: %u %u %s", self.uid, a.uid,
+                logging.debug("update: %s %u %s", self.name, a.uid,
                         repr(dh[a.uid]))
                 h.update(dh[a.uid])
         # init allocs
         for i,d in enumerate(self.allocs):
             dh[d.uid] = bytearray(d.size)
-            logging.debug("initalloc: %u %u %s", self.uid, d.uid,
+            logging.debug("initalloc: %s %u %s", self.name, d.uid,
                     repr(dh[d.uid]))
         # rehash the state size times
         d = h.digest()
@@ -56,7 +56,7 @@ class Task:
         # save this value as the task digest
         g = h.copy()
         taskd = g.hexdigest()
-        logging.debug("taskd: %u %s", self.uid, taskd)
+        logging.debug("taskd: %s %s", self.name, taskd)
         # now compute each out digest
         # allocs are also outs
         outs = [datas[a.uid] for a in self.args if a.access == 'OUT']
@@ -144,14 +144,14 @@ else:
         t = Task(i)
         t.name = n
         node = graph.get_node(n)
-        t.size = int(node.attr[argv.task_size_key])
+        t.size = int(float(node.attr[argv.task_size_key]))
         tasks.append(t)
 
     edges = {}
     for i,e in enumerate(graph.edges()):
         uid = i
         edge = graph.get_edge(e[0],e[1])
-        size = int(edge.attr[argv.data_size_key])
+        size = int(float(edge.attr[argv.data_size_key]))
         d = Data(uid,size)
         datas.append(d)
         edges[edge] = d
@@ -183,8 +183,15 @@ else:
 
     del edges
 
+# transform all names, to be function name compatible
+for t in tasks:
+    t.name = "t_%s" % t.name
 
 # parse log file:
+# small note: the log file is guarantied to be a topological sort, because the
+# yaml that generated the program is so. We use this topological sort to
+# recompute the hashes in the right order...
+toposort = []
 lines = argv.trace.readlines()
 # remove the last one, its just the timing
 del lines[-1]
@@ -195,6 +202,11 @@ for l in lines:
     name = fields[0]
     d = fields[1]
     digests[name] = d
+    toposort.append(name)
+
+# use the toposort to renumber all tasks
+for t in tasks:
+    t.uid = toposort.index(t.name)
 
 print "==== CHECKING"
 # check each task sha, by recomputing it.

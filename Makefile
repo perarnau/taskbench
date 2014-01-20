@@ -12,7 +12,7 @@ QUARK_CFLAGS=-I$(QUARK_PATH)/ `pkg-config --cflags hwloc`
 QUARK_LDFLAGS=-L$(QUARK_PATH)/ -lquark -lpthread `pkg-config --libs hwloc`
 
 CFLAGS+= -Og -ggdb3 -std=c99 -Wall -D_GNU_SOURCE -Wextra -Wno-unused-parameter\
-	 -Wno-unused-variable
+	 -Wno-unused-variable -I.
 LDFLAGS+= -ggdb3 -lrt
 
 %.kaapi: %.kaapi.o sha1.o
@@ -27,13 +27,13 @@ LDFLAGS+= -ggdb3 -lrt
 sha1.o: sha1.c sha.h
 
 %.kaapi.o: %.kaapi.c
-	$(CC) $(KAAPI_CFLAGS) $(CFLAGS) -c $<
+	$(CC) $(KAAPI_CFLAGS) $(CFLAGS) -c $< -o $@
 %.starpu.o: %.starpu.c
-	$(CC) $(STARPU_CFLAGS) $(CFLAGS) -c $<
+	$(CC) $(STARPU_CFLAGS) $(CFLAGS) -c $< -o $@
 %.ompss.o: %.ompss.c
-	mcc $(OMPSS_CFLAGS) $(CFLAGS) -c $<
+	mcc $(OMPSS_CFLAGS) $(CFLAGS) -c $< -o $@
 %.quark.o: %.quark.c
-	$(CC) $(QUARK_CFLAGS) $(CFLAGS) -c $<
+	$(CC) $(QUARK_CFLAGS) $(CFLAGS) -c $< -o $@
 
 %.kaapi.c: %.yaml main.py
 	./main.py --target=kaapi $< > $@

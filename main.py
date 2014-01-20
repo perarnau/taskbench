@@ -52,8 +52,12 @@ class Kaapi:
         for a in task.args:
             if a.access == "IN":
                 self.out.write("KAAPI_ACCESS_MODE_R, ")
-            else:
+            elif a.access == "OUT":
                 self.out.write("KAAPI_ACCESS_MODE_W, ")
+            elif a.access == "INP":
+                self.out.write("KAAPI_ACCESS_MODE_R|KAAPI_ACCESS_MODE_P, ")
+            elif a.access == "OUTP":
+                self.out.write("KAAPI_ACCESS_MODE_W|KAAPI_ACCESS_MODE_P, ")
         print >>self.out, "},"
 
         self.out.write("    (kaapi_offset_t[]) { ")
@@ -408,6 +412,7 @@ class Cdriver:
         ## task struct definition
         print >>self.out, "typedef struct task_st {"
         print >>self.out, "    unsigned long uid;"
+        print >>self.out, "    const char *name;"
         print >>self.out, "    unsigned long size;"
         print >>self.out, "    unsigned long num_allocs;"
         print >>self.out, "    unsigned long num_args;"
@@ -419,8 +424,8 @@ class Cdriver:
         # tasks
         print >>self.out, "task_t tasks[N] = {"
         for t in tasks:
-            t = (t.uid, t.size, len(t.allocs), len(t.args), len(t.children))
-            print >>self.out, "    { %u, %u, %u, %u, %u, NULL, NULL, NULL }," % t
+            f = (t.uid, t.name, t.size, len(t.allocs), len(t.args), len(t.children))
+            print >>self.out, "    { %u, \"%s\", %u, %u, %u, %u, NULL, NULL, NULL }," % f
         print >>self.out, "};"
         # topological sort
         print >>self.out, "unsigned long toposort[N] = {"
@@ -444,9 +449,11 @@ kern_meta_t kern_metas[N];
 void depbench_core_init(unsigned long taskid, void **context)
 {
     unsigned long i;
+    char *name;
+    name = tasks[taskid].name;
     SHA_CTX *c = malloc(sizeof(SHA_CTX));
     SHA1_Init(c);
-    SHA1_Update(c,(sha1_byte*)&taskid,sizeof(taskid));
+    SHA1_Update(c,(sha1_byte*)name,strlen(name));
     *context = c;
     kern_metas[taskid].args_h = calloc(tasks[taskid].num_args,sizeof(sha1_byte *));
     for(i = 0; i < tasks[taskid].num_args; i++)
@@ -623,6 +630,10 @@ for t in tasks:
     names[t.name] = t
 for t in tasks:
     t.finalize(names)
+
+# transform all names, to be function name compatible
+for t in tasks:
+    t.name = "t_%s" % t.name
 
 # Generate the program
 import sys
