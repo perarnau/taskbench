@@ -394,6 +394,8 @@ class Cdriver:
 
     def includes(self):
         print >>self.out, "#include <time.h>"
+        print >>self.out, "#include <stdlib.h>"
+        print >>self.out, "#include <assert.h>"
 
     def global_symbols(self,tasks,datas):
         print >>self.out, "#define N (%u)" % len(tasks)
@@ -449,7 +451,7 @@ kern_meta_t kern_metas[N];
 void depbench_core_init(unsigned long taskid, void **context)
 {
     unsigned long i;
-    char *name;
+    const char *name;
     name = tasks[taskid].name;
     SHA_CTX *c = malloc(sizeof(SHA_CTX));
     SHA1_Init(c);
@@ -575,8 +577,8 @@ void depbench_core_do_work(unsigned long taskid, void *context, unsigned long si
 {
     unsigned long i;
     unsigned long *p = (unsigned long *)context;
-    for(i = 0; i < size*(1<<20); i++)
-        *context += 2*i + *context;
+    for(i = 0; i < size*10; i++)
+        *p += 2*i + *p;
 }
 
 void depbench_core_save_state(unsigned long taskid, void *context)
