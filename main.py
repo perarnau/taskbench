@@ -172,6 +172,7 @@ class StarPU:
                 self.out.write("STARPU_W, ")
         print >>self.out, "}"
         print >>self.out, "};"
+        print >>self.out, "starpu_data_handle_t %s_alloc_handles[%u];" % (name, len(task.allocs)) 
 
     def task_body(self,task):
         print >>self.out, "void {0}_body (void *buffers[], void *cl_arg)".format(task.name)
@@ -181,15 +182,13 @@ class StarPU:
             print >>self.out, "    struct starpu_task *stasks[%u];" % len(task.children)
         print >>self.out, "    task_t *t = &tasks[%u];" % task.uid
         print >>self.out, "    void *context;"
-        # maybe data handles ?
-        print >>self.out, "    starpu_data_handle_t handles[%u];" % len(task.allocs)
         # allocate new data
         print >>self.out, "    for(unsigned int i = 0; i < t->num_allocs; i++)"
         print >>self.out, "    {"
         print >>self.out, "        data_t *d = t->allocs[i];"
         print >>self.out, "        d->mem = calloc(d->size,1);"
         # register them
-        print >>self.out, "        starpu_vector_data_register(&handles[i],0, (uintptr_t)d->mem,d->size,1);"
+        print >>self.out, "        starpu_vector_data_register(&%s_alloc_handles[i],0, (uintptr_t)d->mem,d->size,1);" % task.name
         print >>self.out, "    }"
         # pass IN args to core
         print >>self.out, "    depbench_core_init(%u,&context);" % task.uid
@@ -214,22 +213,21 @@ class StarPU:
             print >>self.out, "    stasks[%u] = starpu_task_create();" % i
             print >>self.out, "    stasks[%u]->cl = &%s_cl;" % (i,t.name)
             for j,a in enumerate(t.args):
-                allocids = [x.uid for x in task.allocs]
-                assert a.uid in allocids
-                print >>self.out, "    stasks[%u]->handles[%u] = handles[%u];" % (i,j,allocids.index(a.uid))
-            print >>self.out, "    starpu_task_submit(stasks[%u]);" % i
+                idx = [ d.uid for d in a.alloc.allocs ]
+                print >>self.out, "    stasks[%u]->handles[%u] = %s_alloc_handles[%u];" % (i,j,a.alloc.name, idx.index(a.uid))
+            print >>self.out, "    assert(!starpu_task_submit(stasks[%u]));" % i
         print >>self.out, "}"
 
     def main_definitions(self):
         print >>self.out, "    struct starpu_task *task;"
 
     def main_init(self):
-        print >>self.out, "    starpu_init(NULL);"
+        print >>self.out, "    assert(!starpu_init(NULL));"
 
     def main_spawnsource(self,source):
         print >>self.out, "    task = starpu_task_create();"
         print >>self.out, "    task->cl = &{0}_cl;".format(source.name)
-        print >>self.out, "    starpu_task_submit(task);"
+        print >>self.out, "    assert(!starpu_task_submit(task));"
         print >>self.out, "    starpu_task_wait_for_all();"
 
     def main_finalize(self):
