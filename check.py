@@ -111,14 +111,14 @@ if argv.type == 'yaml':
 
     for i in xrange(M):
         uid = graph['data'][i]['id']
-        size = graph['data'][i][argv.data_size_key]
+        size = int(float(graph['data'][i][argv.data_size_key]))
         datas.append(Data(uid,size))
         assert i == datas[i].uid
     for i in xrange(N):
         t = Task(i)
         d = graph['tasks'][i]
         t.name = d['name']
-        t.size = d[argv.task_size_key]
+        t.size = int(float(d[argv.task_size_key]))
         for j in xrange(d['numallocs']):
             t.allocs.append(datas[d['allocs'][j]])
         for j in xrange(d['numargs']):
