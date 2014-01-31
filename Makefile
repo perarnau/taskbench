@@ -4,16 +4,18 @@ KAAPI_LDFLAGS=`pkg-config --libs kaapi`
 STARPU_CFLAGS=`pkg-config --cflags starpu-1.1`
 STARPU_LDFLAGS=`pkg-config --libs starpu-1.1`
 
-OMPSS_CFLAGS=
-OMPSS_LDFLAGS=
+OMPSS_CFLAGS=--ompss
+OMPSS_LDFLAGS=--ompss
 
 QUARK_PATH=/home/perarnau/Downloads/quark-0.9.0
 QUARK_CFLAGS=-I$(QUARK_PATH)/ `pkg-config --cflags hwloc`
 QUARK_LDFLAGS=-L$(QUARK_PATH)/ -lquark -lpthread `pkg-config --libs hwloc`
 
-CFLAGS+= -Og -ggdb3 -std=c99 -Wall -D_GNU_SOURCE -Wextra -Wno-unused-parameter\
+CFLAGS+= -O0 -ggdb3 -std=c99 -Wall -D_GNU_SOURCE -Wextra -Wno-unused-parameter\
 	 -Wno-unused-variable -I.
 LDFLAGS+= -ggdb3 -lrt
+
+KERNEL?=verif
 
 %.kaapi: %.kaapi.o sha1.o
 	$(CC) -o $@ $^ $(KAAPI_LDFLAGS) $(LDFLAGS)
@@ -36,11 +38,11 @@ sha1.o: sha1.c sha.h
 	$(CC) $(QUARK_CFLAGS) $(CFLAGS) -c $< -o $@
 
 %.kaapi.c: %.yaml main.py
-	./main.py --target=kaapi $< > $@
+	./main.py --target=kaapi --kernel=$(KERNEL) $< > $@
 %.starpu.c: %.yaml main.py
-	./main.py --target=starpu $< > $@
+	./main.py --target=starpu --kernel=$(KERNEL) $< > $@
 %.ompss.c: %.yaml main.py
-	./main.py --target=ompss $< > $@
+	./main.py --target=ompss --kernel=$(KERNEL) $< > $@
 %.quark.c: %.yaml main.py
-	./main.py --target=quark $< > $@
+	./main.py --target=quark --kernel=$(KERNEL) $< > $@
 
