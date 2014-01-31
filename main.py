@@ -698,6 +698,18 @@ if argv.nedges != 1:
         t.args = newa
     M = M*argv.nedges
 
+# verif kernel: sort args by last access name, tasks are already in topo order
+if argv.kernel == 'verif':
+    lastaccess = {}
+    for t in tasks:
+        for a in t.allocs:
+            lastaccess[a.uid] = t
+        for a in t.args:
+            a.ref = lastaccess[a.uid]
+            if a.access == 'OUT':
+                lastaccess[a.uid] = t
+        t.args.sort(key=lambda a: a.ref.name)
+
 
 # Generate the program
 import sys
