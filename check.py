@@ -10,6 +10,7 @@ class Arg:
     def __init__(self,uid,t):
         self.uid = uid
         self.access = t
+        self.ref = None
 
 class Data:
     def __init__(self,uid, sz):
@@ -34,7 +35,8 @@ class Task:
         h = hashlib.sha1()
         h.update(self.name)
         # then hash each in parameter
-        for a in self.args:
+        ins = [ a for a in self.args if a.access == 'IN' ]
+        for a in sorted(ins, key=lambda a: a.ref.name):
             if a.access == 'IN':
                 assert a.uid in dh
                 logging.debug("update: %s %u %s", self.name, a.uid,
@@ -68,7 +70,7 @@ class Task:
             l = min(g.digest_size,d.size)
             real_hash[:l] = ah[:l]
             dh[d.uid] = real_hash
-            logging.debug("touchout: %u %u %s %s %s %u",self.uid, d.uid,
+            logging.debug("touchout: %s %u %s %s %s %u",self.name, d.uid,
                         repr(dh[d.uid]),repr(ah),repr(g.hexdigest()),l)
         return taskd
 
@@ -207,6 +209,17 @@ for l in lines:
 # use the toposort to renumber all tasks
 for t in tasks:
     t.uid = toposort.index(t.name)
+
+# now use the toposort to give last accessor ref to all args
+lastaccess = {}
+for t in sorted(tasks,key=lambda t: t.uid):
+    for a in t.allocs:
+        lastaccess[a.uid] = t
+    for a in t.args:
+        if a.access == 'OUT':
+            lastaccess[a.uid] = t
+        elif a.access == 'IN':
+            a.ref = lastaccess[a.uid]
 
 print "==== CHECKING"
 # check each task sha, by recomputing it.

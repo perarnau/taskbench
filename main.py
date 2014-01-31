@@ -710,6 +710,13 @@ if argv.kernel == 'verif':
                 lastaccess[a.uid] = t
         t.args.sort(key=lambda a: a.ref.name)
 
+# register which task allocates a data
+for t in tasks:
+    for a in t.allocs:
+        a.ref = t
+for t in tasks:
+    for a in t.args:
+        a.alloc = datas[a.uid].ref
 
 # Generate the program
 import sys
