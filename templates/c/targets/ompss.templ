@@ -1,0 +1,89 @@
+{% extends core %}
+
+{% block includes %}
+{% endblock %}
+
+{% block kernel %}
+{% endblock %}
+
+{% block target %}
+{% for t in tasks %}
+void {{t.name}}_body ( {% set pipe = joiner(", ") -%} {%- for i in range(t.args|length) -%}
+    {{ pipe() }}void *arg{{i}}
+{%- endfor %}
+);
+
+{% endfor %}
+
+{% for t in tasks %}
+void {{t.name}}_body ( {% set pipe = joiner(", ") -%} {%- for i in range(t.args|length) -%}
+    {{ pipe() }}void *arg{{i}}
+{%- endfor %}
+)
+{
+	task_t *t = &tasks[{{t.uid}}];
+	void *context;
+
+	for(unsigned int i = 0; i < t->num_allocs; i++)
+	{
+		data_t *d = t->allocs[i];
+		d->mem = calloc(d->size,1);
+	}
+
+	depbench_core_init({{t.uid}},&context);
+	{% for a in t.args %}
+	{% if a.access == 'IN' %}
+	depbench_core_touch_in({{t.uid}},context,datas[{{a.uid}}].mem,datas[{{a.uid}}].size,{{loop.index0}});
+	{% endif %}
+	{% endfor %}
+
+	depbench_core_do_work({{t.uid}}, context,t->size);
+	depbench_core_save_state({{t.uid}},context);
+
+	for(unsigned int i = 0; i < t->num_allocs; i++)
+	{
+		data_t *d = t->allocs[i];
+		depbench_core_touch_alloc({{t.uid}},context,d->mem,d->size,i);
+	}
+
+	{% for a in t.args %}
+	{% if a.access == 'OUT' %}
+	depbench_core_touch_out({{t.uid}},context,datas[{{a.uid}}].mem,datas[{{a.uid}}].size,{{loop.index0}});
+	{% endif %}
+	{% endfor %}
+
+	{% for c in t.children %}
+	{% set pipe = joiner(" ") %}
+	#pragma omp task {% for a in c.args -%}
+	{%- if a.access == 'IN' -%}
+	{{pipe()}}in(datas[{{a.uid}}].mem [ datas[{{a.uid}}].size ])
+	{%- elif a.access == 'OUT' -%}
+	{{pipe()}}out(datas[{{a.uid}}].mem [ datas[{{a.uid}}].size ])
+	{%- endif -%}
+	{%- endfor %}
+
+	{{c.name}}_body( {% set pipe = joiner(", ") -%} {%- for a in c.args -%}
+		{{ pipe() }}datas[{{a.uid}}].mem
+	{%- endfor %} );
+	{% endfor %}
+}
+{% endfor %}
+
+{% endblock target %}
+
+{% block main_definitions %}
+{% endblock %}
+
+{% block main_init %}
+{% endblock %}
+    
+{% block main_spawnsource %}
+{% set source = tasks|first %}
+	#pragma omp task 
+	{{source.name}}_body();
+	#pragma omp taskwait 
+{% endblock %}
+
+{% block main_finalize %}
+{% endblock %}
+

@@ -1,0 +1,109 @@
+{% extends core %}
+
+{% block includes %}
+#include<starpu.h>
+{% endblock %}
+
+{% block kernel %}
+{% endblock %}
+
+{% block target %}
+{% for t in tasks %}
+void {{t.name}}_body (void *buffers[], void *cl_arg);
+{% endfor %}
+
+{% for t in tasks %}
+struct starpu_codelet {{t.name}}_cl = {
+.cpu_funcs = { {{t.name}}_body, NULL },
+.nbuffers = {{t.args|length}},
+.modes = {
+{% for a in t.args %}
+	{% if a.access == "IN" %}
+		STARPU_R,
+	{% elif a.access == "OUT" %}
+		STARPU_W,
+	{% endif %}	
+{% endfor %}
+}
+};
+starpu_data_handle_t {{t.name}}_alloc_handles[{{t.allocs|length}}];
+{% endfor %}
+
+{% for t in tasks %}
+void {{t.name}}_body (void *buffers[], void *cl_arg)
+{
+	{% if t.children %}
+	struct starpu_task *stasks[{{t.children|length}}];
+	{% endif %}
+	task_t *t = &tasks[{{t.uid}}];
+	void *context;
+
+	for(unsigned int i = 0; i < t->num_allocs; i++)
+	{
+		data_t *d = t->allocs[i];
+		d->mem = calloc(d->size,1);
+		starpu_vector_data_register(&{{t.name}}_alloc_handles[i],0, (uintptr_t)d->mem,d->size,1);
+	}
+
+	depbench_core_init({{t.uid}},&context);
+	{% for a in t.args %}
+	{% if a.access == 'IN' %}
+	depbench_core_touch_in({{t.uid}},context,datas[{{a.uid}}].mem,datas[{{a.uid}}].size,{{loop.index0}});
+	{% endif %}
+	{% endfor %}
+
+	depbench_core_do_work({{t.uid}}, context,t->size);
+	depbench_core_save_state({{t.uid}},context);
+
+	for(unsigned int i = 0; i < t->num_allocs; i++)
+	{
+		data_t *d = t->allocs[i];
+		depbench_core_touch_alloc({{t.uid}},context,d->mem,d->size,i);
+	}
+
+	{% for a in t.args %}
+	{% if a.access == 'OUT' %}
+	depbench_core_touch_out({{t.uid}},context,datas[{{a.uid}}].mem,datas[{{a.uid}}].size,{{loop.index0}});
+	{% endif %}
+	{% endfor %}
+
+	{% for c in t.children %}
+	stasks[{{loop.index0}}] = starpu_task_create();
+	stasks[{{loop.index0}}]->cl = &{{c.name}}_cl;
+	{% set out = loop %}
+	{% for a in c.args %}
+	{% set larg = loop %}
+	{% for alloc in a.alloc.allocs %}
+	{% if alloc.uid == a.uid %}
+	stasks[{{out.index0}}]->handles[{{larg.index0}}] = {{a.alloc.name}}_alloc_handles[{{loop.index0}}];
+	{% endif %}
+	{% endfor %}
+	{% endfor %}
+	assert(!starpu_task_submit(stasks[{{loop.index0}}]));
+	{% endfor %}
+}
+{% endfor %}
+
+{% endblock target %}
+
+{% block main_definitions %}
+	struct starpu_task *task;
+{% endblock %}
+
+{% block main_init %}
+	assert(!starpu_init(NULL));
+{% endblock %}
+    
+{% block main_spawnsource %}
+{% set source = tasks|first %}
+	task = starpu_task_create();
+	task->cl = &{{source.name}}_cl;
+	assert(!starpu_task_submit(task));
+	starpu_task_wait_for_all();
+{% endblock %}
+
+{% block main_finalize %}
+	starpu_shutdown();
+{% endblock %}
+
+    

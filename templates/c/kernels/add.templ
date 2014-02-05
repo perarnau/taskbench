@@ -1,0 +1,51 @@
+{% extends target %} 
+
+{% block kernel %}
+
+typedef struct kern_meta_st {
+	unsigned long result;
+} kern_meta_t;
+
+kern_meta_t kern_metas[N];
+
+void depbench_core_init(unsigned long taskid, void **context)
+{
+    kern_metas[taskid].result = taskid;
+    *context = &kern_metas[taskid].result;
+}
+
+void depbench_core_touch_in(unsigned long taskid, void *context,
+                        void *data, unsigned long size, unsigned int argnum)
+{
+
+}
+
+void depbench_core_touch_out(unsigned long taskid, void *context,
+                        void *data, unsigned long size, unsigned int argnum)
+{
+}
+
+void depbench_core_touch_alloc(unsigned long taskid, void *context,
+                        void *data, unsigned long size, unsigned int argnum)
+{
+}
+
+void depbench_core_do_work(unsigned long taskid, void *context, unsigned long size)
+{
+    unsigned long i;
+    unsigned long *p = (unsigned long *)context;
+    for(i = 0; i < size*10; i++)
+        *p += 2*i + *p;
+}
+
+void depbench_core_save_state(unsigned long taskid, void *context)
+{
+}
+
+void depbench_core_print_meta(unsigned long taskid, const char *taskname)
+{
+	printf("%s %lu\n",taskname,kern_metas[taskid].result);	
+}
+
+{% endblock kernel %}
+

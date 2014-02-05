@@ -1,0 +1,84 @@
+{% extends core %}
+
+{% block includes %}
+#include<quark.h>
+{% endblock %}
+
+{% block kernel %}
+{% endblock %}
+
+{% block target %}
+{% for t in tasks %}
+void {{t.name}}_body (Quark *);
+{% endfor %}
+
+{% for t in tasks %}
+void {{t.name}}_body (Quark *quark)
+{
+	task_t *t = &tasks[{{t.uid}}];
+	void *context;
+
+	for(unsigned int i = 0; i < t->num_allocs; i++)
+	{
+		data_t *d = t->allocs[i];
+		d->mem = calloc(d->size,1);
+	}
+
+	depbench_core_init({{t.uid}},&context);
+	{% for a in t.args %}
+	{% if a.access == 'IN' %}
+	depbench_core_touch_in({{t.uid}},context,datas[{{a.uid}}].mem,datas[{{a.uid}}].size,{{loop.index0}});
+	{% endif %}
+	{% endfor %}
+
+	depbench_core_do_work({{t.uid}}, context,t->size);
+	depbench_core_save_state({{t.uid}},context);
+
+	for(unsigned int i = 0; i < t->num_allocs; i++)
+	{
+		data_t *d = t->allocs[i];
+		depbench_core_touch_alloc({{t.uid}},context,d->mem,d->size,i);
+	}
+
+	{% for a in t.args %}
+	{% if a.access == 'OUT' %}
+	depbench_core_touch_out({{t.uid}},context,datas[{{a.uid}}].mem,datas[{{a.uid}}].size,{{loop.index0}});
+	{% endif %}
+	{% endfor %}
+}
+{% endfor %}
+
+{% endblock target %}
+
+{% block main_definitions %}
+	Quark *quark;
+	Quark_Task *task;
+	Quark_Task_Flags task_flags = Quark_Task_Flags_Initializer;
+{% endblock %}
+
+{% block main_init %}
+	quark = QUARK_New(0);
+{% endblock %}
+    
+{% block main_spawnsource %}
+{% set source = tasks|first %}
+	{{source.name}}_body(quark);
+{% for c in source.children %}
+	task = QUARK_Task_Init(quark,{{c.name}}_body,&task_flags);
+{% for a in c.args %}
+	QUARK_Task_Pack_Arg(quark,task,datas[{{a.uid}}].size,datas[{{a.uid}}].mem,
+	{%- if a.access == 'IN' -%}
+	INPUT
+	{%- elif a.access == 'OUT' -%}
+	OUTPUT
+	{%- endif -%}
+	);
+{% endfor %}
+	QUARK_Insert_Task_Packed(quark,task);
+{% endfor %}
+	QUARK_Waitall(quark);
+{% endblock %}
+
+{% block main_finalize %}
+	QUARK_Delete(quark);
+{% endblock %}

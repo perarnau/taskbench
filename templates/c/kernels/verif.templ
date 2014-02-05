@@ -1,0 +1,116 @@
+{% extends target %} 
+
+{% block kernel %}
+#include <string.h>
+#include "sha.h"
+
+typedef struct kern_meta_st {
+    sha1_byte task_h[SHA1_DIGEST_LENGTH];
+    sha1_byte **args_h;
+} kern_meta_t;
+
+kern_meta_t kern_metas[N];
+
+void depbench_core_init(unsigned long taskid, void **context)
+{
+    unsigned long i;
+    const char *name;
+    name = tasks[taskid].name;
+    SHA_CTX *c = malloc(sizeof(SHA_CTX));
+    SHA1_Init(c);
+    SHA1_Update(c,(sha1_byte*)name,strlen(name));
+    *context = c;
+    kern_metas[taskid].args_h = calloc(tasks[taskid].num_args,sizeof(sha1_byte *));
+    for(i = 0; i < tasks[taskid].num_args; i++)
+        kern_metas[taskid].args_h[i] = calloc(tasks[taskid].args[i]->size,sizeof(sha1_byte));
+}
+
+void depbench_core_touch_in(unsigned long taskid, void *context,
+                        void *data, unsigned long size, unsigned int argnum)
+{
+    unsigned long i;
+    //for(i = 0; i< size; i++)
+    //    printf("%02hx",((unsigned short*)data)[i]);
+    //printf("\n");
+    memcpy(kern_metas[taskid].args_h[argnum],data,size);
+    SHA1_Update(context,data,size);
+
+}
+
+#define min(x,y) ((x) < (y) ? (x) : (y))
+void depbench_core_touch_out(unsigned long taskid, void *context,
+                        void *data, unsigned long size, unsigned int argnum)
+{
+    /* copy the context, update with arg number, finalize and write */
+    SHA_CTX ctxt;
+    unsigned long i;
+    sha1_byte digest[SHA1_DIGEST_LENGTH];
+    memcpy(&ctxt,context,sizeof(SHA_CTX));
+    //SHA1_Update(&ctxt,(sha1_byte*)&argnum,sizeof(argnum));
+    SHA1_Final(digest,&ctxt);
+    //printf("outd %p ",data);
+    //for(i = 0; i < SHA1_DIGEST_LENGTH ; i++)
+    //    printf("%02hx",digest[i]);
+    //printf("\n");
+    memcpy(data,digest,min(size,SHA1_DIGEST_LENGTH));
+    memcpy(kern_metas[taskid].args_h[argnum],digest,min(size,SHA1_DIGEST_LENGTH));
+    //printf("out %p ",data);
+    //for(i = 0; i< size; i++)
+    //    printf("%02hx",((unsigned short *)data)[i]);
+    //printf("\n");
+}
+
+void depbench_core_touch_alloc(unsigned long taskid, void *context,
+                        void *data, unsigned long size, unsigned int argnum)
+{
+    SHA_CTX ctxt;
+    sha1_byte digest[SHA1_DIGEST_LENGTH];
+    memcpy(&ctxt,context,sizeof(SHA_CTX));
+    SHA1_Final(digest,&ctxt);
+    memcpy(data,digest,min(size,SHA1_DIGEST_LENGTH));
+}
+
+void depbench_core_do_work(unsigned long taskid, void *context, unsigned long size)
+{
+    /* rehash the state size times. */
+    SHA_CTX ctxt;
+    sha1_byte digest[SHA1_DIGEST_LENGTH];
+    unsigned long i;
+    SHA1_Final(digest,context);
+    for(i = 1; i < size; i++)
+    {
+        SHA1_Init(&ctxt);
+        SHA1_Update(&ctxt,digest,SHA1_DIGEST_LENGTH);
+        SHA1_Final(digest,&ctxt);
+    }
+    SHA1_Init(context);
+    SHA1_Update(context,digest,SHA1_DIGEST_LENGTH);
+}
+
+void depbench_core_save_state(unsigned long taskid, void *context)
+{
+    SHA_CTX ctxt;
+    int i;
+    sha1_byte digest[SHA1_DIGEST_LENGTH];
+    memcpy(&ctxt,context,sizeof(SHA_CTX));
+    SHA1_Final(digest,&ctxt);
+    memcpy(kern_metas[taskid].task_h,digest,SHA1_DIGEST_LENGTH);
+}
+
+void depbench_core_print_meta(unsigned long taskid, const char *taskname)
+{
+    unsigned long i,j;
+    printf("%s ", taskname);
+    for(i = 0; i < SHA1_DIGEST_LENGTH; i++)
+        printf("%02hx",kern_metas[taskid].task_h[i]);
+    printf(" ");
+    for(j = 0; j < tasks[taskid].num_args; j++)
+    {
+        for(i = 0; i < min(SHA1_DIGEST_LENGTH,tasks[taskid].args[j]->size); i++)
+            printf("%02hx",kern_metas[taskid].args_h[j][i]);
+        printf(" ");
+    }
+    printf("\n");
+}
+{% endblock kernel %}
+

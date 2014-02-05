@@ -1,0 +1,144 @@
+#include <time.h>
+#include <stdlib.h>
+#include <assert.h>
+
+{% block includes %}
+{% endblock %}
+
+/****************************
+* Graph task structures
+****************************/
+
+#define N ( {{ tasks|length }} )
+#define M ( {{ datas|length }} )
+
+typedef struct data_st {
+	void *mem;
+	unsigned long size;
+	unsigned long uid;
+} data_t;
+
+data_t datas[M] = {
+{% for d in datas %}
+	{ NULL, {{ d.size }}, {{ d.uid}} },
+{% endfor %}
+};
+
+data_t *allocs[] = {
+{% for t in tasks %}
+	{% for a in t.allocs -%}
+		(data_t *){{a.index}},
+	{%- endfor %}
+{% endfor %}
+};
+
+data_t *args[] = {
+{% for t in tasks %}
+	{% for a in t.args -%}
+		(data_t *){{datas[a.uid].index}},
+	{%- endfor %}
+{% endfor %}
+};
+
+typedef struct task_st {
+	unsigned long uid;
+	const char *name;
+	unsigned long size;
+	unsigned long num_allocs;
+	unsigned long num_args;
+	unsigned long num_children;
+	data_t **allocs;
+	data_t **args;
+	struct task_st **children;
+} task_t;
+
+task_t tasks[N] = {
+{% for t in tasks %}
+	{ {{ t.uid }}, "{{ t.name }}", {{ t.size }}, {{ t.allocs|length }}, {{ t.args|length}}, {{ t.children|length }}, NULL, NULL, NULL },
+{% endfor %}	
+};
+
+task_t *childrens[] = {
+{% for t in tasks %}
+	{% for c in t.children -%}
+		(task_t*){{c.index}},
+	{%- endfor %}
+{% endfor %}
+};
+
+unsigned long toposort[N] = { {% for t in tasks -%}
+{{ t.uid }},
+{%- endfor %}
+};
+
+{% block kernel %}
+{% endblock %}
+
+{% block target %}
+{% endblock %}
+
+static void init_structs(void)
+{
+	unsigned long i,j;
+	task_t *t;
+	data_t **curap;
+	data_t **curdp;
+	task_t **curtp;
+	curap = &args[0];
+	curdp = &allocs[0];
+	curtp = &childrens[0];
+	for(i = 0; i < N; i++)
+	{
+		t = &tasks[i];
+		if(t->num_allocs > 0)
+		{
+			t->allocs = (data_t **)curdp;
+			for(j = 0; j < t->num_allocs; j++)
+				t->allocs[j] = &datas[(unsigned long)t->allocs[j]];
+			curdp += t->num_allocs;
+		}
+		if(t->num_args > 0)
+		{
+			t->args = (data_t **)curap;
+			for(j = 0; j < t->num_args; j++)
+				t->args[j] = &datas[(unsigned long)t->args[j]];
+			curap += t->num_args;
+		}
+		if(t->num_children > 0)
+		{
+			t->children = (task_t **)curtp;
+			for(j = 0; j < t->num_children; j++)
+				t->children[j] = &tasks[(unsigned long)t->children[j]];
+			curtp += t->num_children;
+		}
+	}
+}
+
+
+int main(int argc, char *argv[])
+{
+{% block main_definitions %}
+{% endblock %}
+	struct timespec start,stop;
+	unsigned long i;
+
+	init_structs();
+
+{% block main_init %}
+{% endblock %}
+
+	clock_gettime(CLOCK_MONOTONIC,&start);
+{% block main_spawnsource %}
+{% endblock %}
+        clock_gettime(CLOCK_MONOTONIC,&stop);
+{% block main_finalize %}
+{% endblock %}
+	for(i = 0; i < N; i++)
+	{
+		task_t *t = &tasks[toposort[i]];
+		depbench_core_print_meta(t->uid, t->name);
+	}
+	long long int time = (stop.tv_nsec - start.tv_nsec) + 1e9* (stop.tv_sec - start.tv_sec);
+	printf("timing: %Ld\n",time);
+	return 0;
+}

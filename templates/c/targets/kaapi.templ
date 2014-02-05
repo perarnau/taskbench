@@ -1,0 +1,140 @@
+{% extends core %}
+
+{% block includes %}
+#include<kaapi.h>
+#include<stddef.h>
+{% endblock %}
+
+{% block kernel %}
+{% endblock %}
+
+{% block target %}
+{% for t in tasks %}
+void {{t.name}}_body (void *taskarg, kaapi_thread_t *thread);
+{% endfor %}
+
+{% for t in tasks %}
+typedef struct {{t.name}}_arg_t {
+{% for i in range(0, t.args|length) %}
+	kaapi_access_t arg{{i}};
+{% endfor %}
+} {{t.name}}_arg_t;
+
+KAAPI_REGISTER_TASKFORMAT( {{t.name}}_format,
+	"{{t.name}}", {{t.name}}_body, sizeof({{t.name}}_arg_t), {{ t.args|length}},
+	(kaapi_access_mode_t[]) {
+	{% for a in t.args %}
+	{% if a.access == "IN" %}
+		KAAPI_ACCESS_MODE_R,
+	{% elif a.access == "OUT" %}
+		KAAPI_ACCESS_MODE_W,
+	{% elif a.access == "INP" %}
+		KAAPI_ACCESS_MODE_R|KAAPI_ACCESS_MODE_P,
+	{% elif a.access == "OUTP" %}
+		KAAPI_ACCESS_MODE_W|KAAPI_ACCESS_MODE_P,
+	{% endif %}
+	{% endfor %}
+        },
+	(kaapi_offset_t[]) {
+	{% for a in t.args %}
+        	offsetof({{t.name}}_arg_t, arg{{loop.index0}}.data),
+	{% endfor %}
+        },
+
+	(kaapi_offset_t[]) {
+	{% for a in t.args %}
+        	offsetof({{t.name}}_arg_t, arg{{loop.index0}}.version),
+	{% endfor %}
+        },
+
+        (const struct kaapi_format_t*[]) {
+       	{% for a in t.args %}
+        	kaapi_voidp_format,
+	{% endfor %}
+        },
+        0
+)
+{% endfor %}
+
+{% for t in tasks %}
+void {{t.name}}_body (void *taskarg, kaapi_thread_t *thread)
+{
+	{% if t.children %}
+	kaapi_task_t *ktasks[{{t.children|length}}];
+	{% for c in t.children %}
+	{{c.name}}_arg_t* arg{{loop.index0}};
+	{% endfor %}
+	{% endif %}
+	task_t *t = &tasks[{{t.uid}}];
+	void *context;
+
+	for(unsigned int i = 0; i < t->num_allocs; i++)
+	{
+		data_t *d = t->allocs[i];
+		d->mem = calloc(d->size,1);
+	}
+
+	{{t.name}}_arg_t* arg = ({{t.name}}_arg_t*)taskarg;
+	depbench_core_init({{t.uid}},&context);
+	{% for a in t.args %}
+	{% if a.access == 'IN' %}
+	depbench_core_touch_in({{t.uid}},context,datas[{{a.uid}}].mem,datas[{{a.uid}}].size,{{loop.index0}});
+	{% endif %}
+	{% endfor %}
+
+	depbench_core_do_work({{t.uid}}, context,t->size);
+	depbench_core_save_state({{t.uid}},context);
+
+	for(unsigned int i = 0; i < t->num_allocs; i++)
+	{
+		data_t *d = t->allocs[i];
+		depbench_core_touch_alloc({{t.uid}},context,d->mem,d->size,i);
+	}
+
+	{% for a in t.args %}
+	{% if a.access == 'OUT' %}
+	depbench_core_touch_out({{t.uid}},context,datas[{{a.uid}}].mem,datas[{{a.uid}}].size,{{loop.index0}});
+	{% endif %}
+	{% endfor %}
+
+	{% for c in t.children %}
+	ktasks[{{loop.index0}}] = kaapi_thread_toptask(thread);
+	kaapi_task_init(ktasks[{{loop.index0}}], {{c.name}}_body,
+			kaapi_thread_pushdata(thread, sizeof({{c.name}}_arg_t)));
+	arg{{loop.index0}} = kaapi_task_getargst(ktasks[{{loop.index0}}],{{c.name}}_arg_t);
+	{% set out = loop %}
+	{% for a in c.args %}
+	{% if a.uid in t.allocs|attr("uid") %}
+	kaapi_access_init(&arg{{out.index0}}->arg{{loop.index0}},datas[{{a.uid}}].mem);
+	{% else %}
+	arg{{out.index0}}->arg{{loop.index0}}.data = datas[{{a.uid}}].mem;
+	{% endif %}
+	{% endfor %}
+	kaapi_thread_pushtask(thread);
+	{% endfor %}
+}
+{% endfor %}
+
+{% endblock target %}
+
+{% block main_definitions %}
+	kaapi_task_t *task;
+	kaapi_thread_t *thread;
+{% endblock %}
+
+{% block main_init %}
+	kaapi_init(1,&argc,&argv);
+	thread = kaapi_self_thread();
+{% endblock %}
+    
+{% block main_spawnsource %}
+{% set source = tasks|first %}
+	task = kaapi_thread_toptask(thread);
+	kaapi_task_init(task,{{source.name}}_body,kaapi_thread_pushdata(thread,sizeof({{source.name}}_arg_t)));
+	kaapi_thread_pushtask(thread);
+	kaapi_sched_sync();
+{% endblock %}
+
+{% block main_finalize %}
+	kaapi_finalize();
+{% endblock %}
