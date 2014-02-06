@@ -7,45 +7,35 @@
 {% block kernel %}
 {% endblock %}
 
-{% block target %}
+{% block spawners %}
+typedef void (*spawner_func_t)(Quark *quark);
 {% for t in tasks %}
-void {{t.name}}_body (Quark *);
+void {{t.name}}_dospawn (Quark *quark);
+{% endfor %}
+{% endblock %}
+
+{% block target %}
+{% for s in sigs %}
+void {{s.name}}_body (Quark *);
+{% endfor %}
+
+{% for s in sigs %}
+void {{s.name}}_body (Quark *quark)
+{
+	unsigned long uid;
+	void *last_arg = NULL;
+	void *arg;
+	void *arglist;
+	arglist = QUARK_Args_List(quark);
+	arg = QUARK_Args_Pop(arglist, &last_arg);
+	uid = *(unsigned long*)arg;
+	task_t *t = &tasks[uid];
+	depbench_core_taskbody(uid);
+}
 {% endfor %}
 
 {% for t in tasks %}
-void {{t.name}}_body (Quark *quark)
-{
-	task_t *t = &tasks[{{t.uid}}];
-	void *context;
-
-	for(unsigned int i = 0; i < t->num_allocs; i++)
-	{
-		data_t *d = t->allocs[i];
-		d->mem = calloc(d->size,1);
-	}
-
-	depbench_core_init({{t.uid}},&context);
-	{% for a in t.args %}
-	{% if a.access == 'IN' %}
-	depbench_core_touch_in({{t.uid}},context,datas[{{a.uid}}].mem,datas[{{a.uid}}].size,{{loop.index0}});
-	{% endif %}
-	{% endfor %}
-
-	depbench_core_do_work({{t.uid}}, context,t->size);
-	depbench_core_save_state({{t.uid}},context);
-
-	for(unsigned int i = 0; i < t->num_allocs; i++)
-	{
-		data_t *d = t->allocs[i];
-		depbench_core_touch_alloc({{t.uid}},context,d->mem,d->size,i);
-	}
-
-	{% for a in t.args %}
-	{% if a.access == 'OUT' %}
-	depbench_core_touch_out({{t.uid}},context,datas[{{a.uid}}].mem,datas[{{a.uid}}].size,{{loop.index0}});
-	{% endif %}
-	{% endfor %}
-}
+void {{t.name}}_dospawn(Quark *quark) {}
 {% endfor %}
 
 {% endblock target %}
@@ -62,9 +52,10 @@ void {{t.name}}_body (Quark *quark)
     
 {% block main_spawnsource %}
 {% set source = tasks|first %}
-	{{source.name}}_body(quark);
+	depbench_core_taskbody({{source.uid}});
 {% for c in source.children %}
-	task = QUARK_Task_Init(quark,{{c.name}}_body,&task_flags);
+	task = QUARK_Task_Init(quark,{{c.sig.name}}_body,&task_flags);
+	QUARK_Task_Pack_Arg(quark,task,sizeof(unsigned long), &tasks[{{c.uid}}].uid, VALUE);
 {% for a in c.args %}
 	QUARK_Task_Pack_Arg(quark,task,datas[{{a.uid}}].size,datas[{{a.uid}}].mem,
 	{%- if a.access == 'IN' -%}

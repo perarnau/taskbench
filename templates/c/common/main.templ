@@ -53,6 +53,9 @@ arg_t args[] = {
 {% endfor %}
 };
 
+{% block spawners %}
+{% endblock %}
+
 typedef struct task_st {
 	unsigned long uid;
 	const char *name;
@@ -63,11 +66,12 @@ typedef struct task_st {
 	data_t **allocs;
 	arg_t *args;
 	struct task_st **children;
+	spawner_func_t spawner;
 } task_t;
 
 task_t tasks[N] = {
 {% for t in tasks %}
-	{ {{ t.uid }}, "{{ t.name }}", {{ t.size }}, {{ t.allocs|length }}, {{ t.args|length}}, {{ t.children|length }}, NULL, NULL, NULL },
+	{ {{ t.uid }}, "{{ t.name }}", {{ t.size }}, {{ t.allocs|length }}, {{ t.args|length}}, {{ t.children|length }}, NULL, NULL, NULL, {{t.name}}_dospawn},
 {% endfor %}	
 };
 
@@ -84,8 +88,47 @@ unsigned long toposort[N] = { {% for t in tasks -%}
 {%- endfor %}
 };
 
+void depbench_core_taskbody(unsigned long uid);
+
 {% block kernel %}
 {% endblock %}
+
+void depbench_core_taskbody (unsigned long uid)
+{
+	task_t *t = &tasks[uid];
+	void *context;
+
+	for(unsigned int i = 0; i < t->num_allocs; i++)
+	{
+		data_t *d = t->allocs[i];
+		d->mem = calloc(d->size,1);
+	}
+
+	depbench_core_init(t->uid,&context);
+
+	for(unsigned int i = 0; i < t->num_args; i++)
+	{
+		arg_t a = t->args[i];
+		if(a.access == DEPBENCH_MODE_R)
+			depbench_core_touch_in(t->uid,context,a.data->mem,a.data->size,i);
+	}
+
+	depbench_core_do_work(t->uid, context,t->size);
+	depbench_core_save_state(t->uid,context);
+
+	for(unsigned int i = 0; i < t->num_allocs; i++)
+	{
+		data_t *d = t->allocs[i];
+		depbench_core_touch_alloc(t->uid,context,d->mem,d->size,i);
+	}
+
+	for(unsigned int i = 0; i < t->num_args; i++)
+	{
+		arg_t a = t->args[i];
+		if(a.access == DEPBENCH_MODE_W)
+			depbench_core_touch_out(t->uid,context,a.data->mem,a.data->size,i);
+	}
+}
 
 {% block target %}
 {% endblock %}

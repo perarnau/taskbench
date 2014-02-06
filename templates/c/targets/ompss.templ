@@ -6,55 +6,42 @@
 {% block kernel %}
 {% endblock %}
 
-{% block target %}
+{% block spawners %}
+typedef void (*spawner_func_t)(void);
 {% for t in tasks %}
-void {{t.name}}_body ( {% set pipe = joiner(", ") -%} {%- for i in range(t.args|length) -%}
-    {{ pipe() }}void *arg{{i}}
+void {{t.name}}_dospawn (void);
+{% endfor %}
+{% endblock %}
+
+{% block target %}
+{% for s in sigs %}
+void {{s.name}}_body ( unsigned long uid {%- for i in range(s.args|length) -%}
+    , void *arg{{i}}
 {%- endfor %}
 );
 
 {% endfor %}
 
-{% for t in tasks %}
-void {{t.name}}_body ( {% set pipe = joiner(", ") -%} {%- for i in range(t.args|length) -%}
-    {{ pipe() }}void *arg{{i}}
+{% for s in sigs %}
+void {{s.name}}_body ( unsigned long uid {%- for i in range(s.args|length) -%}
+    , void *arg{{i}}
 {%- endfor %}
 )
 {
-	task_t *t = &tasks[{{t.uid}}];
-	void *context;
-
-	for(unsigned int i = 0; i < t->num_allocs; i++)
+	task_t *t = &tasks[uid];
+	depbench_core_taskbody(uid);
+	for(unsigned int i = 0; i < t->num_children; i++)
 	{
-		data_t *d = t->allocs[i];
-		d->mem = calloc(d->size,1);
+		t->children[i]->spawner();
 	}
+}
+{% endfor %}
 
-	depbench_core_init({{t.uid}},&context);
-	{% for a in t.args %}
-	{% if a.access == 'IN' %}
-	depbench_core_touch_in({{t.uid}},context,datas[{{a.uid}}].mem,datas[{{a.uid}}].size,{{loop.index0}});
-	{% endif %}
-	{% endfor %}
-
-	depbench_core_do_work({{t.uid}}, context,t->size);
-	depbench_core_save_state({{t.uid}},context);
-
-	for(unsigned int i = 0; i < t->num_allocs; i++)
-	{
-		data_t *d = t->allocs[i];
-		depbench_core_touch_alloc({{t.uid}},context,d->mem,d->size,i);
-	}
-
-	{% for a in t.args %}
-	{% if a.access == 'OUT' %}
-	depbench_core_touch_out({{t.uid}},context,datas[{{a.uid}}].mem,datas[{{a.uid}}].size,{{loop.index0}});
-	{% endif %}
-	{% endfor %}
-
-	{% for c in t.children %}
+{% for t in tasks %}
+void {{t.name}}_dospawn(void)
+{
 	{% set pipe = joiner(" ") %}
-	#pragma omp task {% for a in c.args -%}
+	#pragma omp task {% for a in t.args -%}
 	{%- if a.access == 'IN' -%}
 	{{pipe()}}in(datas[{{a.uid}}].mem [ datas[{{a.uid}}].size ])
 	{%- elif a.access == 'OUT' -%}
@@ -62,10 +49,9 @@ void {{t.name}}_body ( {% set pipe = joiner(", ") -%} {%- for i in range(t.args|
 	{%- endif -%}
 	{%- endfor %}
 
-	{{c.name}}_body( {% set pipe = joiner(", ") -%} {%- for a in c.args -%}
-		{{ pipe() }}datas[{{a.uid}}].mem
+	{{t.sig.name}}_body({{t.uid}} {%- for a in t.args -%}
+		, datas[{{a.uid}}].mem
 	{%- endfor %} );
-	{% endfor %}
 }
 {% endfor %}
 
@@ -80,7 +66,7 @@ void {{t.name}}_body ( {% set pipe = joiner(", ") -%} {%- for i in range(t.args|
 {% block main_spawnsource %}
 {% set source = tasks|first %}
 	#pragma omp task 
-	{{source.name}}_body();
+	{{source.sig.name}}_body({{source.uid}});
 	#pragma omp taskwait 
 {% endblock %}
 

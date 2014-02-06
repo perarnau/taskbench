@@ -35,6 +35,13 @@ class Task:
     def __getitem__(self,key):
         return self.__getattr__(key)
 
+class TaskSig:
+    def __init__(self,name,args):
+        self.name = name
+        self.args = args
+
+    def __getitem__(self,key):
+        return self.__getattr__(key)
 
 ### Main function
 drivers = [ 'kaapi', 'starpu', 'ompss', 'quark' ]
@@ -133,11 +140,17 @@ for t in tasks:
     for a in t.args:
         a.alloc = datas[a.uid].ref
 
-for i,t in enumerate(tasks):
-    t.index = i
-
-for i,d in enumerate(datas):
-    d.index = i
+# find for each task its signature.
+sigs = {}
+modes = { 'IN': 'r', 'OUT' : 'w', 'INP' : 'rp', 'OUTP' : 'wp' }
+for t in tasks:
+    # take the list of arguments, and build a signature for them. For now, we
+    # only need to group task by the list of parameter access modes, in order.
+    sig = "s_" + ''.join([ modes[a.access] for a in t.args ])
+    if sig not in sigs:
+        # build sig
+        sigs[sig] = TaskSig(sig,t.args)
+    t.sig = sigs[sig]
 
 # Generate the program
 import sys
@@ -154,4 +167,4 @@ core_template = env.get_template(core_template_name)
 target_template = env.get_template(target_template_name)
 kernel_template = env.get_template(kernel_template_name)
 
-print kernel_template.render(tasks=tasks, datas=datas, core=core_template, target=target_template)
+print kernel_template.render(tasks=tasks, datas=datas, sigs=sigs.values(), core=core_template, target=target_template)
