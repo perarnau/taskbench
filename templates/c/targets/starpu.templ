@@ -23,6 +23,22 @@ void {{s.name}}_body (void *buffers[], void *cl_arg);
 {% endfor %}
 
 {% for s in sigs %}
+#if {{s.args|length}} > STARPU_NMAXBUFS
+enum starpu_data_access_mode {{s.name}}_modes[{{s.args|length}}] = {
+{% for a in s.args %}
+	{% if a.access == "IN" %}
+		STARPU_R,
+	{% elif a.access == "OUT" %}
+		STARPU_W,
+	{% endif %}
+{% endfor %}
+};
+struct starpu_codelet {{s.name}}_cl = {
+.cpu_funcs = { {{s.name}}_body, NULL },
+.nbuffers = {{s.args|length}},
+.dyn_modes = {{s.name}}_modes,
+};
+#else
 struct starpu_codelet {{s.name}}_cl = {
 .cpu_funcs = { {{s.name}}_body, NULL },
 .nbuffers = {{s.args|length}},
@@ -32,10 +48,11 @@ struct starpu_codelet {{s.name}}_cl = {
 		STARPU_R,
 	{% elif a.access == "OUT" %}
 		STARPU_W,
-	{% endif %}	
+	{% endif %}
 {% endfor %}
 }
 };
+#endif
 {% endfor %}
 starpu_data_handle_t alloc_handles[{{datas|length}}];
 
@@ -65,9 +82,16 @@ void {{t.name}}_dospawn(void)
 	st->cl = &{{t.sig.name}}_cl;
 	st->cl_arg = &tasks[{{t.uid}}].uid;
 	st->cl_arg_size = sizeof(unsigned long);
+#if {{t.args|length}} > STARPU_NMAXBUFS
+	st->dyn_handles = calloc(st->cl->nbuffers, sizeof(starpu_data_handle_t));
+	{% for a in t.args %}
+	st->dyn_handles[{{loop.index0}}] = alloc_handles[{{a.uid}}];
+	{% endfor %}
+#else
 	{% for a in t.args %}
 	st->handles[{{loop.index0}}] = alloc_handles[{{a.uid}}];
 	{% endfor %}
+#endif
 	assert(!starpu_task_submit(st));
 }
 {% endfor %}
@@ -81,7 +105,7 @@ void {{t.name}}_dospawn(void)
 {% block main_init %}
 	assert(!starpu_init(NULL));
 {% endblock %}
-    
+
 {% block main_spawnsource %}
 {% set source = tasks|first %}
 	task = starpu_task_create();
