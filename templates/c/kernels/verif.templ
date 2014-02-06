@@ -22,7 +22,7 @@ void depbench_core_init(unsigned long taskid, void **context)
     *context = c;
     kern_metas[taskid].args_h = calloc(tasks[taskid].num_args,sizeof(sha1_byte *));
     for(i = 0; i < tasks[taskid].num_args; i++)
-        kern_metas[taskid].args_h[i] = calloc(tasks[taskid].args[i]->size,sizeof(sha1_byte));
+        kern_metas[taskid].args_h[i] = calloc(tasks[taskid].args[i].data->size,sizeof(sha1_byte));
 }
 
 void depbench_core_touch_in(unsigned long taskid, void *context,
@@ -106,7 +106,7 @@ void depbench_core_print_meta(unsigned long taskid, const char *taskname)
     printf(" ");
     for(j = 0; j < tasks[taskid].num_args; j++)
     {
-        for(i = 0; i < min(SHA1_DIGEST_LENGTH,tasks[taskid].args[j]->size); i++)
+        for(i = 0; i < min(SHA1_DIGEST_LENGTH,tasks[taskid].args[j].data->size); i++)
             printf("%02hx",kern_metas[taskid].args_h[j][i]);
         printf(" ");
     }

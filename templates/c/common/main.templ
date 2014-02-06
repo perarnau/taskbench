@@ -27,16 +27,29 @@ data_t datas[M] = {
 data_t *allocs[] = {
 {% for t in tasks %}
 	{% for a in t.allocs -%}
-		(data_t *){{a.index}},
+		(data_t *){{a.uid}},
 	{%- endfor %}
 {% endfor %}
 };
 
-data_t *args[] = {
+typedef enum {	DEPBENCH_MODE_R,
+		DEPBENCH_MODE_W,
+		DEPBENCH_MODE_RP,
+		DEPBENCH_MODE_WP
+} access_t;
+
+typedef struct arg_st {
+	data_t *data;
+	unsigned long uid;
+	access_t access;
+} arg_t;
+
+arg_t args[] = {
+{% set acc = { 'IN' : 'DEPBENCH_MODE_R', 'OUT' : 'DEPBENCH_MODE_W', 'INP' : 'DEPBENCH_MODE_RP', 'OUTP' : 'DEPBENCH_MODE_WP' } %}
 {% for t in tasks %}
-	{% for a in t.args -%}
-		(data_t *){{datas[a.uid].index}},
-	{%- endfor %}
+	{% for a in t.args %}
+	{ NULL,  {{a.uid}}, {{acc[a.access]}} },
+	{% endfor %}
 {% endfor %}
 };
 
@@ -48,7 +61,7 @@ typedef struct task_st {
 	unsigned long num_args;
 	unsigned long num_children;
 	data_t **allocs;
-	data_t **args;
+	arg_t *args;
 	struct task_st **children;
 } task_t;
 
@@ -61,7 +74,7 @@ task_t tasks[N] = {
 task_t *childrens[] = {
 {% for t in tasks %}
 	{% for c in t.children -%}
-		(task_t*){{c.index}},
+		(task_t*){{c.uid}},
 	{%- endfor %}
 {% endfor %}
 };
@@ -81,7 +94,7 @@ static void init_structs(void)
 {
 	unsigned long i,j;
 	task_t *t;
-	data_t **curap;
+	arg_t *curap;
 	data_t **curdp;
 	task_t **curtp;
 	curap = &args[0];
@@ -99,9 +112,9 @@ static void init_structs(void)
 		}
 		if(t->num_args > 0)
 		{
-			t->args = (data_t **)curap;
+			t->args = (arg_t *)curap;
 			for(j = 0; j < t->num_args; j++)
-				t->args[j] = &datas[(unsigned long)t->args[j]];
+				t->args[j].data = &datas[(unsigned long)t->args[j].uid];
 			curap += t->num_args;
 		}
 		if(t->num_children > 0)
