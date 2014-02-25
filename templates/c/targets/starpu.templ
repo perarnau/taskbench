@@ -22,6 +22,21 @@ void {{t.name}}_dospawn (void);
 void {{s.name}}_body (void *buffers[], void *cl_arg);
 {% endfor %}
 
+/* the perfmodel helper for starpu scheduling */
+static size_t get_size_base(struct starpu_task *t, unsigned nimpl)
+{
+	unsigned long *tid = (unsigned long*)t->cl_arg;
+	return tasks[*tid].size;
+}
+
+static struct starpu_perfmodel myperfmodel =
+{
+	.type = STARPU_HISTORY_BASED,
+	.size_base = get_size_base,
+	.symbol = "HISTORY_WITH_GET_SIZE",
+};
+
+
 {% for s in sigs %}
 #if {{s.args|length}} > STARPU_NMAXBUFS
 enum starpu_data_access_mode {{s.name}}_modes[{{s.args|length}}] = {
@@ -37,6 +52,7 @@ struct starpu_codelet {{s.name}}_cl = {
 .cpu_funcs = { {{s.name}}_body, NULL },
 .nbuffers = {{s.args|length}},
 .dyn_modes = {{s.name}}_modes,
+.model = &myperfmodel,
 };
 #else
 struct starpu_codelet {{s.name}}_cl = {
@@ -50,7 +66,8 @@ struct starpu_codelet {{s.name}}_cl = {
 		STARPU_W,
 	{% endif %}
 {% endfor %}
-}
+},
+.model = &myperfmodel,
 };
 #endif
 {% endfor %}
