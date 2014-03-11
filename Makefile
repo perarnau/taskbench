@@ -38,11 +38,11 @@ sha1.o: sha1.c sha.h
 	$(CC) $(QUARK_CFLAGS) $(CFLAGS) -c $< -o $@
 
 %.kaapi.c: %.yaml main.py
-	./main.py --target=kaapi --kernel=$(KERNEL) $< > $@
+	./main.py --target=kaapi --kernel=$(KERNEL) $< --outprefix=$*.kaapi
 %.starpu.c: %.yaml main.py
-	./main.py --target=starpu --kernel=$(KERNEL) $< > $@
+	./main.py --target=starpu --kernel=$(KERNEL) $< --outprefix=$*.starpu
 %.ompss.c: %.yaml main.py
-	./main.py --target=ompss --kernel=$(KERNEL) $< > $@
+	./main.py --target=ompss --kernel=$(KERNEL) $< --outprefix=$*.ompss
 %.quark.c: %.yaml main.py
-	./main.py --target=quark --kernel=$(KERNEL) $< > $@
+	./main.py --target=quark --kernel=$(KERNEL) $< --outprefix=$*.quark
 

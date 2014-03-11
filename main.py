@@ -55,9 +55,11 @@ parser.add_argument("--data-size-key",help="name of the data size key",
 parser.add_argument("--task-size-key",help="name of the task size key",
                     default="weight")
 parser.add_argument("infile",type=argparse.FileType('r'))
+parser.add_argument("--outprefix",type=str,help="output files name prefix",
+                    default="pybench.out")
 argv = parser.parse_args()
 
-print "//using file " + argv.infile.name + " as input"
+print "using file " + argv.infile.name + " as input"
 
 graph = {}
 N = 0
@@ -167,4 +169,6 @@ core_template = env.get_template(core_template_name)
 target_template = env.get_template(target_template_name)
 kernel_template = env.get_template(kernel_template_name)
 
-print kernel_template.render(tasks=tasks, datas=datas, sigs=sigs.values(), core=core_template, target=target_template)
+fname = argv.outprefix + ".c"
+with open(fname,'w') as f:
+    print >>f, kernel_template.render(tasks=tasks, datas=datas, sigs=sigs.values(), core=core_template, target=target_template)
