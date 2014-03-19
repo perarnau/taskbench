@@ -1,0 +1,104 @@
+N: 7
+M: 8
+data:
+- id: 0
+  size: 1
+- id: 1
+  size: 1
+- id: 2
+  size: 1
+- id: 3
+  size: 1
+- id: 4
+  size: 1
+- id: 5
+  size: 1
+- id: 6
+  size: 1
+- id: 7
+  size: 1
+tasks:
+- name: a
+  numallocs: 8
+  numargs: 0
+  numchildren: 6
+  allocs: [0, 1, 2, 3, 4, 5, 6, 7]
+  args: []
+  children: [b, e, c, d, f, g]
+  weight: 1
+- name: b
+  numallocs: 0
+  numargs: 3
+  numchildren: 0
+  allocs: []
+  args:
+  - id: 0
+    type: IN
+  - id: 2
+    type: OUT
+  - id: 3
+    type: OUT
+  children: []
+  weight: 1
+- name: e
+  numallocs: 0
+  numargs: 2
+  numchildren: 0
+  allocs: []
+  args:
+  - id: 1
+    type: IN
+  - id: 6
+    type: OUT
+  children: []
+  weight: 1
+- name: c
+  numallocs: 0
+  numargs: 2
+  numchildren: 0
+  allocs: []
+  args:
+  - id: 2
+    type: IN
+  - id: 4
+    type: OUT
+  children: []
+  weight: 1
+- name: d
+  numallocs: 0
+  numargs: 2
+  numchildren: 0
+  allocs: []
+  args:
+  - id: 3
+    type: IN
+  - id: 5
+    type: OUT
+  children: []
+  weight: 1
+- name: f
+  numallocs: 0
+  numargs: 3
+  numchildren: 0
+  allocs: []
+  args:
+  - id: 4
+    type: IN
+  - id: 5
+    type: IN
+  - id: 7
+    type: OUT
+  children: []
+  weight: 1
+- name: g
+  numallocs: 0
+  numargs: 2
+  numchildren: 0
+  allocs: []
+  args:
+  - id: 6
+    type: IN
+  - id: 7
+    type: IN
+  children: []
+  weight: 1

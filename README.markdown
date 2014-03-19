@@ -36,6 +36,11 @@ Input Generation
 It should be possible to automatically generate the input to this program too.
 Currently, this is done in the ggen tool.
 
+Input examples are in the `examples` directory. Note that Quark requires the
+flat version, StarPU and OpenMP the flat or cluster version, and XKaapi support
+all of them.
+
+
 License & Copyright
 ===================
 
