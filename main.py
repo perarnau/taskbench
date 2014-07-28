@@ -43,8 +43,29 @@ class TaskSig:
     def __getitem__(self,key):
         return self.__getattr__(key)
 
+class CLang:
+    def __init__(self,outprefix,env):
+        self.out = outprefix + ".c"
+        self.env = env
+
+    def render(self,target,kernel, tasks, datas, sigs):
+        # build the names of the template we are looking for
+        core_template_name = "c/common/main.templ"
+        target_template_name = "c/targets/%s.templ" % target
+        kernel_template_name = "c/kernels/%s.templ" % kernel
+
+        core_template = env.get_template(core_template_name)
+        target_template = env.get_template(target_template_name)
+        kernel_template = env.get_template(kernel_template_name)
+
+        fname = argv.outprefix + ".c"
+        with open(fname,'w') as f:
+            print >>f, kernel_template.render(tasks=tasks, datas=datas, sigs=sigs, core=core_template, target=target_template)
+
 ### Main function
-drivers = [ 'kaapi', 'starpu', 'ompss', 'quark' ]
+lang = { 'kaapi' : CLang, 'starpu' : CLang, 'ompss' : CLang,
+        'quark' : CLang }
+drivers = [ 'kaapi', 'starpu', 'ompss', 'quark']
 kernels = [ 'verif', 'add' ]
 parser = argparse.ArgumentParser()
 parser.add_argument("--target",choices=drivers,default=drivers[0])
@@ -160,15 +181,5 @@ import sys
 l = jinja2.FileSystemLoader('templates')
 env = jinja2.Environment(loader=l, trim_blocks=True, lstrip_blocks=True)
 
-# build the names of the template we are looking for
-core_template_name = "c/common/main.templ"
-target_template_name = "c/targets/%s.templ" % argv.target
-kernel_template_name = "c/kernels/%s.templ" % argv.kernel
-
-core_template = env.get_template(core_template_name)
-target_template = env.get_template(target_template_name)
-kernel_template = env.get_template(kernel_template_name)
-
-fname = argv.outprefix + ".c"
-with open(fname,'w') as f:
-    print >>f, kernel_template.render(tasks=tasks, datas=datas, sigs=sigs.values(), core=core_template, target=target_template)
+rendr = lang[argv.target](argv.outprefix, env)
+rendr.render(argv.target, argv.kernel, tasks, datas, sigs.values())
