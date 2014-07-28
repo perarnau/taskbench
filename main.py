@@ -88,7 +88,7 @@ M = 0
 datas = []
 tasks = []
 import yaml
-graph = yaml.load(argv.infile)
+graph = yaml.load(argv.infile, Loader=yaml.CLoader)
 
 N = graph['N']
 M = graph['M']
