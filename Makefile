@@ -25,6 +25,8 @@ KERNEL?=verif
 	mcc -o $@ $^ $(OMPSS_LDFLAGS) $(LDFLAGS)
 %.quark: %.quark.o sha1.o
 	$(CC) -o $@ $^ $(QUARK_LDFLAGS) $(LDFLAGS)
+%.seq: %.seq.o sha1.o
+	$(CC) -o $@ $^ $(SEQ_LDFLAGS) $(LDFLAGS)
 
 sha1.o: sha1.c sha.h
 
@@ -36,6 +38,8 @@ sha1.o: sha1.c sha.h
 	mcc $(OMPSS_CFLAGS) $(CFLAGS) -c $< -o $@
 %.quark.o: %.quark.c
 	$(CC) $(QUARK_CFLAGS) $(CFLAGS) -c $< -o $@
+%.seq.o: %.seq.c
+	$(CC) $(SEQ_CFLAGS) $(CFLAGS) -c $< -o $@
 
 %.kaapi.c: %.yaml main.py
 	./main.py --target=kaapi --kernel=$(KERNEL) $< --outprefix=$*.kaapi
@@ -45,4 +49,6 @@ sha1.o: sha1.c sha.h
 	./main.py --target=ompss --kernel=$(KERNEL) $< --outprefix=$*.ompss
 %.quark.c: %.yaml main.py
 	./main.py --target=quark --kernel=$(KERNEL) $< --outprefix=$*.quark
+%.seq.c: %.yaml main.py
+	./main.py --target=seq --kernel=$(KERNEL) $< --outprefix=$*.seq
 

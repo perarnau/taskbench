@@ -1,0 +1,54 @@
+{% extends core %}
+
+{% block includes %}
+{% endblock %}
+
+{% block kernel %}
+{% endblock %}
+
+{% block spawners %}
+typedef void (*spawner_func_t)(void);
+{% for t in tasks %}
+void {{t.name}}_dospawn (void);
+{% endfor %}
+{% endblock %}
+
+{% block target %}
+{% for s in sigs %}
+void {{s.name}}_body (unsigned long uid);
+{% endfor %}
+
+{% for s in sigs %}
+void {{s.name}}_body (unsigned long uid)
+{
+	task_t *t = &tasks[uid];
+	depbench_core_taskbody(uid);
+	for(unsigned int i = 0; i < t->num_children; i++)
+	{
+		t->children[i]->spawner();
+	}
+}
+{% endfor %}
+
+{% for t in tasks %}
+void {{t.name}}_dospawn(void)
+{
+	{{t.sig.name}}_body({{t.uid}});
+}
+{% endfor %}
+
+{% endblock target %}
+
+{% block main_definitions %}
+{% endblock %}
+
+{% block main_init %}
+{% endblock %}
+
+{% block main_spawnsource %}
+{% set source = tasks|first %}
+	{{source.sig.name}}_body({{source.uid}});
+{% endblock %}
+
+{% block main_finalize %}
+{% endblock %}

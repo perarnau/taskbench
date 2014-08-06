@@ -64,8 +64,8 @@ class CLang:
 
 ### Main function
 lang = { 'kaapi' : CLang, 'starpu' : CLang, 'ompss' : CLang,
-        'quark' : CLang }
-drivers = [ 'kaapi', 'starpu', 'ompss', 'quark']
+        'quark' : CLang, 'seq' : CLang }
+drivers = [ 'kaapi', 'starpu', 'ompss', 'quark', 'seq']
 kernels = [ 'verif', 'add' ]
 parser = argparse.ArgumentParser()
 parser.add_argument("--target",choices=drivers,default=drivers[0])
