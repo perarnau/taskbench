@@ -31,9 +31,16 @@
 extern "C" {
 #endif
 
-/* Define this if your machine is LITTLE_ENDIAN, otherwise #undef it: */
-#ifndef LITTLE_ENDIAN
+/* use recent gcc defines to detect endianness *
+ * Modified by Swann Perarnau <swann.perarnau@gmail.com>
+ */
+#ifdef __GNUC__
+#if defined(__BYTE_ORDER__) && ( __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__) \
+	&& !defined(LITTLE_ENDIAN)
 #define LITTLE_ENDIAN
+#endif
+#else
+#error "update this code to detect endianness on your platform"
 #endif
 
 /* Make sure you define these types for your architecture: */
