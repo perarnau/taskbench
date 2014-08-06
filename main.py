@@ -78,6 +78,7 @@ parser.add_argument("--task-size-key",help="name of the task size key",
 parser.add_argument("infile",type=argparse.FileType('r'))
 parser.add_argument("--outprefix",type=str,help="output files name prefix",
                     default="pybench.out")
+parser.add_argument("--yamlc",action='store_true',help="use yaml C lib for parsing (faster)")
 argv = parser.parse_args()
 
 print "using file " + argv.infile.name + " as input"
@@ -88,7 +89,12 @@ M = 0
 datas = []
 tasks = []
 import yaml
-graph = yaml.load(argv.infile, Loader=yaml.CLoader)
+if argv.yamlc:
+    loader = yaml.CLoader
+else:
+    loader = yaml.Loader
+
+graph = yaml.load(argv.infile, Loader=loader)
 
 N = graph['N']
 M = graph['M']
